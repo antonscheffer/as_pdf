@@ -1,5 +1,5 @@
 # as_pdf
-Create a PDF with PL/SQL.
+Coming soon: Create a PDF with PL/SQL.
 
 Finally an updated version of as_pdf3.
 
