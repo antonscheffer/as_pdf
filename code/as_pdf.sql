@@ -23,7 +23,7 @@ is
 --https://www.pdf-online.com/osa/validate.aspx
 --https://xodo.com/validate-pdfa
 --https://demo.verapdf.org/
---select * from V$TEMPORARY_LOBS
+--select * from V$TEMPORARY_LOB
 --https://github.com/itext/itext-publications-examples-java/blob/develop/src/main/resources/pdfs/links2.pdf
 --https://github.com/uswds/public-sans/tree/develop/fonts
 --https://learn.microsoft.com/en-us/typography/opentype/spec/post
@@ -4440,7 +4440,10 @@ $END
       then
         l_ind := l_ind + 2;
       else
-        if l_hex = 'FFC0' -- SOF0 (Start Of Frame 0) marker
+        if l_hex in ( 'FFC0' -- SOF0 (Start Of Frame 0) Baseline DCT
+                    , 'FFC1' -- SOF1 (Start Of Frame 1) Extended Sequential DCT
+                    , 'FFC2' -- SOF2 (Start Of Frame 2) Progressive DCT
+                    )
         then
           l_hex := rawtohex( dbms_lob.substr( p_img, 5, l_ind + 4 ) );
           l_img.color_res := to_number( substr( l_hex, 1, 2 ), 'xx' );
@@ -4578,6 +4581,18 @@ $END
     return l_img;
   end parse_bmp;
   --
+  function calc_crc32( p_data blob )
+  return varchar2
+  is
+    l_tmp blob;
+    l_crc32 varchar2(16);
+  begin
+    l_tmp := utl_compress.lz_compress( p_data );
+    l_crc32 := dbms_lob.substr( l_tmp, 8, dbms_lob.getlength( l_tmp ) - 7 );
+    dbms_lob.freetemporary( l_tmp );
+    return substr( l_crc32, 1, 8 );
+  end calc_crc32;
+  --
   function parse_img
     ( p_blob  in blob
     , p_crc32 in varchar2 := null
@@ -4620,7 +4635,7 @@ $END
     --
     if l_img.type is not null
     then
-      l_img.crc32 := coalesce( p_crc32, utl_raw.substr( utl_compress.lz_compress( p_blob ), -8, 4 ) );
+      l_img.crc32 := coalesce( p_crc32, calc_crc32( p_blob ) );
     end if;
     return l_img;
   end parse_img;
@@ -4636,7 +4651,7 @@ $END
     then
       return null;
     end if;
-    l_crc32 := utl_raw.substr( utl_compress.lz_compress( p_img ), -8, 4 );
+    l_crc32 := calc_crc32( p_img );
     l_idx := g_pdf.images.first;
     while l_idx is not null
     loop
