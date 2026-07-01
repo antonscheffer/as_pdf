@@ -1,6 +1,3 @@
 # as_pdf
-Coming soon: Create a PDF with PL/SQL.
-
 Finally an updated version of as_pdf3.
-
-Password for my.pdf is as_pdf
+Now as_pdf, version 4.0.1
