@@ -2,51 +2,21 @@ create or replace package as_pdf
 is
   --
   use_utl_file    constant boolean := true;
+  use_utl_http    constant boolean := true;
   use_dbms_crypto constant boolean := false;
+  use_apex        constant boolean := false;
   --
--- declare
 -- to do
 -- signature
--- CFF font subsetting
--- tables
--- patterns, achtergrond kleur voor text? in table?
---
---https://github.com/lka/excel2zugferd
---https://forums.oracle.com/ords/apexds/post/generating-password-protected-pdf-document-usuing-as-pdf-mi-3107
---https://forums.oracle.com/ords/apexds/post/does-anyone-uses-pl-fpdf-1781
---https://github.com/py-pdf/fpdf2/tree/master/test
---https://github.com/typst/svg2pdf/tree/main/tests
---https://www.adobe.com/uk/acrobat/online/password-protect-pdf.html
---https://github.com/Valerio-Rossetti/Oracle/tree/main
---https://github.com/jtsoya539/as_pdf
---https://github.com/grlicaa/GEN_PDF
---https://www.pdf-online.com/osa/validate.aspx
---https://xodo.com/validate-pdfa
---https://demo.verapdf.org/
---select * from V$TEMPORARY_LOB
---https://github.com/itext/itext-publications-examples-java/blob/develop/src/main/resources/pdfs/links2.pdf
---https://github.com/uswds/public-sans/tree/develop/fonts
---https://learn.microsoft.com/en-us/typography/opentype/spec/post
---https://github.com/xiayukun/font/blob/master/BAUHS93.TTF
---https://www.w3.org/WAI/WCAG21/Techniques/pdf/PDF6
---https://apex-de.blogspot.com/2024/10/zugferd-xrechnung-development-status.html
---https://www.pdflib.com/pdf-knowledge-base/zugferd-and-factur-x/
---https://publisher.bfo.com/live/help/#_factur_x
---https://www.ilovepdf.com/protect-pdf
---https://www.pdflib.com/pdf-knowledge-base/pdf-password-security/encryption/
---https://pomax.github.io/CFF-glyphlet-fonts/
---https://github.com/Pomax/the-cff-table
---https://github.com/Pomax/fontmetrics.js
---https://pdfa.org/resources/
---https://opentype.js.org/
---https://github.com/itext/itext-publications-examples-java/tree/develop/cmpfiles/sandbox/signatures/validation
---https://simonbengtsson.github.io/jsPDF-AutoTable/#minimal
---https://community.adobe.com/t5/acrobat-discussions/tagging-repeating-table-header/m-p/12094073
---https://github.com/foliojs/pdfkit/blob/master/lib/font/data/Courier.afm
---https://github.com/jboss/uel/blob/master/fonts/Times-Roman.pfb
---https://ctan.org/tex-archive/fonts/psfonts/bitstrea/courier
---  l_zip blob;
---  l_file_names as_zip.file_names;
+-- https://www.gemboxsoftware.com/pdf/examples/c-sharp-vb-net-pdf-advanced-electronic-signature-pades/1103#pades-b-b
+-- acroforms
+-- https://github.com/phihag/pdfform.js/tree/master/test/data
+-- https://www.sejda.com/pdf-forms
+--GSUB
+--https://learn.microsoft.com/en-gb/typography/script-development/arabic
+--https://learn.microsoft.com/en-us/windows/terminal/cascadia-code
+--https://simoncozens.github.io/fonts-and-layout//
+--https://support.creativemarket.com/hc/en-us/articles/360037478813-Using-Fonts-with-Special-Features-OpenType#msword
   --
   c_get_cp_page_width     constant pls_integer := 0;
   c_get_cp_page_height    constant pls_integer := 1;
@@ -70,32 +40,22 @@ is
   c_get_font_name         constant pls_integer := 30;
   c_get_font_style        constant pls_integer := 31;
   c_get_font_family       constant pls_integer := 32;
+  c_get_font_win_ascent   constant pls_integer := 33;
+  c_get_font_win_descent  constant pls_integer := 34;
   --
   type tp_numbers   is table of number;
   type tp_varchar2s is table of varchar2(32767);
   type tp_num_tab   is table of number index by pls_integer;
   type tp_pls_tab   is table of pls_integer index by pls_integer;
-  type tp_txt_tab   is table of varchar2(100) index by pls_integer;
   --
-$IF dbms_db_version.ver_le_11
-$THEN
-  c_null_num_tab tp_num_tab;
-  c_null_pls_tab tp_pls_tab;
-  c_null_txt_tab tp_txt_tab;
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-  c_null_num_tab tp_num_tab;
-  c_null_pls_tab tp_pls_tab;
-  c_null_txt_tab tp_txt_tab;
-$END
-  --
-  function get( p_what pls_integer )
+  function get( p_what pls_integer
+              , p_idx  pls_integer := null
+              )
   return number;
   --
-  function get_string
-    ( p_what pls_integer
-    , p_idx  pls_integer := null
-    )
+  function get_string( p_what pls_integer
+                     , p_idx  pls_integer := null
+                     )
   return varchar2;
   --
   function get_font_index
@@ -137,6 +97,7 @@ $END
     , p_fontsize         number      := null
     , p_color            varchar2    := null
     , p_page_proc        pls_integer := null
+    , p_options          varchar2 character set any_cs := null
     );
   --
   procedure write_txt
@@ -146,6 +107,7 @@ $END
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
     , p_color      varchar2    := null
+    , p_options    varchar2 character set any_cs := null
     );
   --
   procedure link
@@ -159,11 +121,36 @@ $END
     , p_page_proc  pls_integer := null
     );
   --
+  procedure underline
+    ( p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_color      varchar2    := null
+    , p_txt_color  varchar2    := null
+    , p_page_proc  pls_integer := null
+    );
+  --
+  procedure strikeout
+    ( p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_color      varchar2    := null
+    , p_txt_color  varchar2    := null
+    , p_page_proc  pls_integer := null
+    );
+  --
   procedure multi_cell
     ( p_txt        varchar2 character set any_cs
     , p_x          number
     , p_y          number
     , p_width      number      := null
+    , p_height     number      := null
     , p_padding    number      := null
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
@@ -173,6 +160,7 @@ $END
     , p_align      varchar2    := null
     , p_line_width number      := null
     , p_url        varchar2    := null
+    , p_options    varchar2 character set any_cs := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -184,105 +172,47 @@ $END
     , p_padding    number      := null
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
+    , p_min_height number      := null
     , p_align      varchar2    := null
     , p_txt_color  varchar2    := null
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
     , p_line_width number      := null
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi         tp_pls_tab  := c_null_pls_tab
-    , p_fs         tp_num_tab  := c_null_num_tab
-    , p_al         tp_txt_tab  := c_null_txt_tab
-    , p_tc         tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi         tp_pls_tab  := c_null_pls_tab
-    , p_fs         tp_num_tab  := c_null_num_tab
-    , p_al         tp_txt_tab  := c_null_txt_tab
-    , p_tc         tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi         tp_pls_tab  := tp_pls_tab()
-    , p_fs         tp_num_tab  := tp_num_tab()
-    , p_al         tp_txt_tab  := tp_txt_tab()
-    , p_tc         tp_txt_tab  := tp_txt_tab()
-$END
+    , p_options    varchar2 character set any_cs := null
     );
   --
   procedure cursor2table
-    ( p_rc            sys_refcursor
-    , p_x             number
-    , p_y             number
-    , p_headers       tp_varchar2s := null
-    , p_widths        tp_numbers   := null
-    , p_font_index    pls_integer  := null
-    , p_fontsize      number       := null
-    , p_txt_color     varchar2     := null
-    , p_odd_color     varchar2     := null
-    , p_even_color    varchar2     := null
-    , p_line_color    varchar2     := null
-    , p_line_width    number       := null
-    , p_header_fi     pls_integer  := null
-    , p_header_fs     number       := null
-    , p_header_txt_c  varchar2     := null
-    , p_header_color  varchar2     := null
-    , p_header_repeat boolean      := true
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi            tp_pls_tab   := tp_pls_tab()
-    , p_fs            tp_num_tab   := tp_num_tab()
-    , p_al            tp_txt_tab   := tp_txt_tab()
-    , p_fmt           tp_txt_tab   := tp_txt_tab()
-$END
+    ( p_rc         sys_refcursor
+    , p_x          number
+    , p_y          number
+    , p_headers    tp_varchar2s := null
+    , p_widths     tp_numbers   := null
+    , p_font_index pls_integer  := null
+    , p_fontsize   number       := null
+    , p_txt_color  varchar2     := null
+    , p_odd_color  varchar2     := null
+    , p_even_color varchar2     := null
+    , p_line_color varchar2     := null
+    , p_line_width number       := null
+    , p_min_height number       := null
+    , p_options    varchar2 character set any_cs := null
     );
   --
   procedure query2table
-    ( p_query        varchar2
-    , p_x             number
-    , p_y             number
-    , p_headers       tp_varchar2s := null
-    , p_widths        tp_numbers   := null
-    , p_font_index    pls_integer  := null
-    , p_fontsize      number       := null
-    , p_txt_color     varchar2     := null
-    , p_odd_color     varchar2     := null
-    , p_even_color    varchar2     := null
-    , p_line_color    varchar2     := null
-    , p_line_width    number       := null
-    , p_header_fi     pls_integer  := null
-    , p_header_fs     number       := null
-    , p_header_txt_c  varchar2     := null
-    , p_header_color  varchar2     := null
-    , p_header_repeat boolean      := true
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi            tp_pls_tab   := tp_pls_tab()
-    , p_fs            tp_num_tab   := tp_num_tab()
-    , p_al            tp_txt_tab   := tp_txt_tab()
-    , p_fmt           tp_txt_tab   := tp_txt_tab()
-$END
+    ( p_query      varchar2
+    , p_x          number
+    , p_y          number
+    , p_headers    tp_varchar2s := null
+    , p_widths     tp_numbers   := null
+    , p_font_index pls_integer  := null
+    , p_fontsize   number       := null
+    , p_txt_color  varchar2     := null
+    , p_odd_color  varchar2     := null
+    , p_even_color varchar2     := null
+    , p_line_color varchar2     := null
+    , p_line_width number       := null
+    , p_min_height number       := null
+    , p_options    varchar2 character set any_cs := null
     );
   --
   function load_image( p_img blob )
@@ -294,8 +224,22 @@ $END
     )
   return pls_integer;
   --
+  function load_image( p_url varchar2 )
+  return pls_integer;
+  --
   procedure put_image
     ( p_img_idx   pls_integer
+    , p_x         number               -- left
+    , p_y         number               -- bottom
+    , p_width     number      := null
+    , p_height    number      := null
+    , p_align     varchar2    := null
+    , p_valign    varchar2    := null
+    , p_page_proc pls_integer := null
+    );
+  --
+  procedure put_image
+    ( p_url       varchar2
     , p_x         number               -- left
     , p_y         number               -- bottom
     , p_width     number      := null
@@ -313,7 +257,8 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
-  );
+    , p_page_proc pls_integer := null
+    );
   --
   procedure put_image
     ( p_dir       varchar2
@@ -324,7 +269,8 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
-  );
+    , p_page_proc pls_integer := null
+    );
   --
   procedure add_embedded_file
     ( p_name    varchar2
@@ -349,9 +295,29 @@ $END
     , p_extra_meta_data_descriptions varchar2 := null
     );
   --
+  procedure set_proxy
+    ( p_proxy            varchar2
+    , p_no_proxy_domains varchar2 := null
+    );
+  --
+  procedure set_wallet
+    ( p_path     varchar2
+    , p_password varchar2 := null
+    );
+  --
   procedure set_initial_zoom( p_zoom_factor number := null );
   --
-  procedure set_line_height_factor( p_factor number := 1 );
+  procedure set_open_type_features
+    ( p_enabled_features varchar2 := null
+    , p_script           varchar2 := null
+    , p_language         varchar2 := null
+    , p_apply_GSUB       boolean  := null
+    , p_apply_GPOS       boolean  := null
+    );
+  --
+  procedure set_current_page( p_page number );
+  --
+  procedure set_line_spacing_factor( p_factor number := 1.2 );
   --
   procedure set_color( p_rgb varchar2 := '000000' ); -- RGB-hex or X11 name
   --
@@ -376,6 +342,7 @@ $END
     , p_y2         number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -385,6 +352,7 @@ $END
     , p_width      number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -394,24 +362,29 @@ $END
     , p_height     number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
   procedure rect
-    ( p_x          number
-    , p_y          number
-    , p_width      number
-    , p_height     number
-    , p_line_color varchar2    := null
-    , p_fill_color varchar2    := null
-    , p_line_width number      := null
-    , p_page_proc  pls_integer := null
+    ( p_x           number
+    , p_y           number
+    , p_width       number
+    , p_height      number
+    , p_line_color  varchar2    := null
+    , p_fill_color  varchar2    := null
+    , p_line_width  number      := null
+    , p_radius      number      := null
+    , p_transparant boolean     := null
+    , p_alpha       number      := null
+    , p_page_proc   pls_integer := null
     );
   --
   procedure path
     ( p_steps      tp_numbers
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -426,6 +399,7 @@ $END
     , p_y4         number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -438,6 +412,7 @@ $END
     , p_y3         number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -450,17 +425,20 @@ $END
     , p_y3         number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     );
   --
   procedure circle
-    ( p_x          number
-    , p_y          number
-    , p_radius     number
-    , p_line_color varchar2    := null
-    , p_fill_color varchar2    := null
-    , p_line_width number      := null
-    , p_page_proc  pls_integer := null
+    ( p_x           number
+    , p_y           number
+    , p_radius      number
+    , p_line_color  varchar2    := null
+    , p_fill_color  varchar2    := null
+    , p_line_width  number      := null
+    , p_transparant boolean     := false
+    , p_alpha       number      := null
+    , p_page_proc   pls_integer := null
     );
   --
   procedure ellips
@@ -472,31 +450,58 @@ $END
     , p_fill_color       varchar2    := null
     , p_line_width       number      := null
     , p_degrees_rotation number      := null
+    , p_transparant      boolean     := false
+    , p_alpha            number      := null
     , p_page_proc        pls_integer := null
     );
   --
   function load_font
-    ( p_font  blob
-    , p_embed boolean := true
+    ( p_font              blob
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     )
   return pls_integer;
   --
   function load_font
-    ( p_dir      varchar2
-    , p_filename varchar2
-    , p_embed    boolean := true
+    ( p_dir               varchar2
+    , p_filename          varchar2
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
+    )
+  return pls_integer;
+  --
+  function load_google_font
+    ( p_family            varchar2             -- one or more font families, separate the names with a pipe character (|)
+    , p_variant           varchar2 := 'normal' -- a list of styles or weights separated by commas (,)
+    , p_subset            varchar2 := null     -- Some of the fonts in the Google Font Directory support multiple scripts (like Latin, Cyrillic, and Greek for example)
+    , p_embed             boolean  := true
+    , p_opentype_features boolean  := true
     )
   return pls_integer;
   --
   procedure load_font
-    ( p_font  blob
-    , p_embed boolean := true
+    ( p_font              blob
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     );
   --
   procedure load_font
-    ( p_dir      varchar2
-    , p_filename varchar2
-    , p_embed    boolean := true
+    ( p_dir               varchar2
+    , p_filename          varchar2
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
+    );
+  --
+  procedure load_google_font
+    ( p_family            varchar2
+    , p_variant           varchar2 := 'normal'
+    , p_subset            varchar2 := null
+    , p_embed             boolean  := true
+    , p_opentype_features boolean  := true
     );
   --
   function conv2uu( p_value number, p_unit varchar2 )
@@ -505,6 +510,8 @@ $END
   procedure set_page_format( p_format varchar2 := 'A4' );
   --
   procedure set_page_orientation( p_orientation varchar2 := 'PORTRAIT' );
+  --
+  procedure set_text_direction( p_text_direction varchar2 := 'L2R' );
   --
   procedure set_page_size
     ( p_width  number
@@ -520,7 +527,8 @@ $END
                     , p_margin_right     number   := null
                     , p_margin_top       number   := null
                     , p_margin_bottom    number   := null
-                    , p_unit             varchar2 := 'cm'
+                    , p_unit             varchar2 := null
+                    , p_text_direction   varchar2 := null
                     );
   --
   procedure set_margins
@@ -528,7 +536,7 @@ $END
     , p_left number   := null
     , p_bottom number := null
     , p_right number  := null
-    , p_unit varchar2 := 'cm'
+    , p_unit varchar2 := null
     );
   --
   procedure init_pdf( p_page_size        varchar2 := null
@@ -539,12 +547,16 @@ $END
                     , p_margin_right     number   := null
                     , p_margin_top       number   := null
                     , p_margin_bottom    number   := null
-                    , p_unit             varchar2 := 'cm'
+                    , p_unit             varchar2 := null
+                    , p_text_direction   varchar2 := null
                     );
   --
   procedure init;
   --
   function finish_pdf( p_password varchar2 := null )
+  return blob;
+  --
+  function get_pdf( p_password varchar2 := null )
   return blob;
   --
   procedure save_pdf
@@ -555,20 +567,70 @@ $END
   --
 end as_pdf;
 /
+
 create or replace package body as_pdf
 is
-  c_version          constant varchar2(10) := '0.4.0';
-  c_db_charset       constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
-  c_db_ncharset      constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
-  c_producer         constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
-  c_eol              constant varchar2(4) := chr( 13 ) || chr( 10 );
-  c_default_fontsize constant number := 12;
-  c_tab_spaces       constant pls_integer := 4;
-  e_no_fit           exception;
+  c_version            constant varchar2(10) := '0.4.0.1';
+  c_db_charset         constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
+  c_db_ncharset        constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
+  c_producer           constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
+  c_eol                constant varchar2(4) := chr( 13 ) || chr( 10 );
+  c_default_fontsize   constant number := 12;
+  c_default_line_width constant number := 0.5;
+  c_tab_spaces         constant varchar2(10) := rpad( ' ', 4 );
+  e_no_fit             exception;
+  c_CFF                constant varchar2(8) := utl_raw.cast_to_raw( 'CFF ' );
+  c_CFF2               constant varchar2(8) := utl_raw.cast_to_raw( 'CFF2' );
+  c_cvt                constant varchar2(8) := utl_raw.cast_to_raw( 'cvt ' );
+  c_fpgm               constant varchar2(8) := utl_raw.cast_to_raw( 'fpgm' );
+  c_glyf               constant varchar2(8) := utl_raw.cast_to_raw( 'glyf' );
+  c_head               constant varchar2(8) := utl_raw.cast_to_raw( 'head' );
+  c_hhea               constant varchar2(8) := utl_raw.cast_to_raw( 'hhea' );
+  c_hmtx               constant varchar2(8) := utl_raw.cast_to_raw( 'hmtx' );
+  c_loca               constant varchar2(8) := utl_raw.cast_to_raw( 'loca' );
+  c_maxp               constant varchar2(8) := utl_raw.cast_to_raw( 'maxp' );
+  c_prep               constant varchar2(8) := utl_raw.cast_to_raw( 'prep' );
   --
   c_LOCAL_FILE_HEADER        constant raw(4) := hextoraw( '504B0304' ); -- Local file header signature
   c_CENTRAL_FILE_HEADER      constant raw(4) := hextoraw( '504B0102' ); -- Central directory file header signature
   c_END_OF_CENTRAL_DIRECTORY constant raw(4) := hextoraw( '504B0506' ); -- End of central directory signature
+  --
+  c_lt constant raw(1) := utl_raw.cast_to_raw( '<' );
+  c_gt constant raw(1) := utl_raw.cast_to_raw( '>' );
+  --
+  -- Bidi classes
+  c_no_bidi_class constant pls_integer := 0;
+  c_class_RLE     constant pls_integer := 1;
+  c_class_LRE     constant pls_integer := 2;
+  c_class_RLO     constant pls_integer := 3;
+  c_class_LRO     constant pls_integer := 4;
+  c_class_PDF     constant pls_integer := 5;
+  c_class_BN      constant pls_integer := 6;
+  c_class_FSI     constant pls_integer := 7;
+  c_class_LRI     constant pls_integer := 8;
+  c_class_RLI     constant pls_integer := 9;
+  c_class_PDI     constant pls_integer := 10;
+  c_class_ON      constant pls_integer := 11;
+  c_class_R       constant pls_integer := 12;
+  c_class_AL      constant pls_integer := 13;
+  c_class_L       constant pls_integer := 14;
+  c_class_EN      constant pls_integer := 15;
+  c_class_AN      constant pls_integer := 16;
+  c_class_ES      constant pls_integer := 17;
+  c_class_CS      constant pls_integer := 18;
+  c_class_ET      constant pls_integer := 19;
+  c_class_B       constant pls_integer := 20;
+  c_class_S       constant pls_integer := 21;
+  c_class_WS      constant pls_integer := 22;
+  c_class_NSM     constant pls_integer := 23;
+  --
+  type tp_hex is table of pls_integer index by varchar2(2);
+  g_hex tp_hex;
+  g_wallet_path     varchar2(32767);
+  g_wallet_password varchar2(32767);
+  g_proxy           varchar2(32767);
+  g_no_proxy        varchar2(32767);
+  g_unicode_data    tp_pls_tab;
   --
   type tp_zip_info is record
     ( len integer
@@ -594,6 +656,19 @@ is
     , name1 raw(32767)
     );
   --
+  type tp_annot is record
+    ( subtype   varchar2(32)
+    , url       varchar2(1024)
+    , color     varchar2(128)
+    , extra     number
+    , width     number
+    , lt_x      number
+    , lt_y      number
+    , rb_x      number
+    , rb_y      number
+    , object_nr number(10)
+    );
+  type tp_annots is table of tp_annot index by pls_integer;
   type tp_page_proc is record
     ( page_nr pls_integer
     , proc    pls_integer
@@ -604,12 +679,13 @@ is
   type tp_page_procs is table of tp_page_proc index by pls_integer;
   type tp_objects is table of number(10) index by pls_integer;
   type tp_settings is record
-    ( page_width    number
-    , page_height   number
-    , margin_left   number
-    , margin_right  number
-    , margin_top    number
-    , margin_bottom number
+    ( page_width     number
+    , page_height    number
+    , margin_left    number
+    , margin_right   number
+    , margin_top     number
+    , margin_bottom  number
+    , text_direction varchar2(3)
     );
   type tp_page is record
     ( settings   tp_settings
@@ -617,7 +693,7 @@ is
     , fontsize   number
     , color      varchar2(100)
     , bk_color   varchar2(100)
-    , links      tp_pls_tab
+    , annots     tp_annots
     , content    blob
     );
   type tp_pages is table of tp_page index by pls_integer;
@@ -636,6 +712,61 @@ is
     , object       number(10)
     );
   type tp_images is table of tp_img index by pls_integer;
+  type tp_matrix is table of tp_pls_tab index by pls_integer;
+  type tp_features is table of varchar2(4);
+  type tp_lang_sys is record
+    ( tag             varchar2(4)
+    , feature_indices tp_pls_tab
+    );
+  type tp_script_table is table of tp_lang_sys index by pls_integer;
+  type tp_script is record
+    ( tag varchar2(4)
+    , script_table tp_script_table
+    );
+  type tp_script_list is table of tp_script index by pls_integer;
+  type tp_feature is record
+    ( tag     varchar2(4)
+    , lookups tp_pls_tab
+    );
+  type tp_feature_list is table of tp_feature index by pls_integer;
+  type tp_anchor is record
+    ( xCoordinate pls_integer
+    , yCoordinate pls_integer
+    );
+  type tp_value_record is record
+    ( xPlacement pls_integer
+    , yPlacement pls_integer
+    , xAdvance   pls_integer
+    , yAdvance   pls_integer
+    );
+  type tp_value_records is table of tp_value_record index by pls_integer;
+  type tp_vr_list is table of tp_value_records index by pls_integer;
+  type tp_subtable is record
+    ( coverage           tp_pls_tab
+    , data_list          tp_pls_tab
+    , matrix             tp_matrix
+    , value_records_list tp_vr_list
+    );
+  type tp_subtables is table of tp_subtable index by pls_integer;
+  type tp_lookup is record
+    ( lookup_type        pls_integer
+    , lookup_flags       pls_integer
+    , mark_filtering_set pls_integer
+    , coverage           tp_matrix
+    , subtables          tp_subtables
+    );
+  type tp_lookup_list is table of tp_lookup index by pls_integer;
+  type tp_gsub_gpos is record
+    ( table_type   varchar2(4)
+    , script_list  tp_script_list
+    , lookup_list  tp_lookup_list
+    , feature_list tp_feature_list
+    );
+  type tp_font_gsub_gpos is table of tp_gsub_gpos index by pls_integer;
+  type tp_gdef is record
+    ( class_def tp_pls_tab
+    );
+  type tp_font_gdef is table of tp_gdef index by pls_integer;
   type tp_font is record
     ( standard boolean
     , used     boolean
@@ -661,15 +792,16 @@ is
     , linegap          pls_integer
     , capheight        pls_integer
     , stemv            pls_integer
+    , win_ascent       pls_integer
+    , win_descent      pls_integer
+    , underline_pos    pls_integer
+     ,strikeout_pos    pls_integer
     , subset           boolean
-    , fontfile2        blob
-    , ttf_offset       pls_integer
+    , ttf_offset       integer
     , numGlyphs        pls_integer
     , indexToLocFormat pls_integer
-    , hmetrics         tp_pls_tab  -- indexed by glyph id
-    , code2glyph       tp_pls_tab  -- glyph ids index by char code
-    , used_glyphs      tp_pls_tab  -- char codes indexed by glyph id
-    , char_width_tab   tp_pls_tab  -- indexed by char code (WE8MSWIN1252)
+    , cff              boolean
+    , delete_in_gsub_type6 boolean
     );
   type tp_fonts is table of tp_font index by pls_integer;
   type tp_embedded_file is record
@@ -680,44 +812,51 @@ is
     , content blob
     );
   type tp_embedded_files is table of tp_embedded_file index by pls_integer;
-  type tp_link is record
-    ( url       varchar2(1024)
-    , lt_x      number
-    , lt_y      number
-    , rb_x      number
-    , rb_y      number
-    , object_nr number(10)
+  type tp_extgstate is record
+    ( stroking_alpha     number
+    , non_stroking_alpha number
+    , blend_mode         varchar2(32)
     );
-  type tp_links is table of tp_link index by pls_integer;
+  type tp_blobs is table of blob index by pls_integer;
+  type tp_egs_dir is table of tp_extgstate index by pls_integer;
   type tp_pdf is record
-    ( pdf_blob           blob
-    , pdf_version        number
-    , pdf_a3_conformance varchar2(1)
-    , zoom               number
-    , fonts_used         boolean
-    , current_font       pls_integer
-    , current_page       pls_integer
-    , x                  number
-    , y                  number
-    , line_height_factor number
-    , title              varchar2(1024)
-    , author             varchar2(1024)
-    , subject            varchar2(1024)
-    , creator            varchar2(1024)
-    , producer           varchar2(1024)
-    , keywords           varchar2(8096)
-    , color              varchar2(100)
-    , bk_color           varchar2(100)
-    , meta_rdf_descr     varchar2(32767)
-    , key                raw(128)
-    , fonts              tp_fonts
-    , links              tp_links
-    , pages              tp_pages
-    , images             tp_images
-    , objects            tp_objects
-    , page_procs         tp_page_procs
-    , page_settings      tp_settings
-    , embedded_files     tp_embedded_files
+    ( pdf_blob            blob
+    , pdf_version         number
+    , pdf_a3_conformance  varchar2(1)
+    , zoom                number
+    , fonts_used          boolean
+    , current_font        pls_integer
+    , current_page        pls_integer
+    , current_font_index  pls_integer
+    , x                   number
+    , y                   number
+    , line_spacing_factor number
+    , current_font_size   varchar2(1024)
+    , title               varchar2(1024)
+    , author              varchar2(1024)
+    , subject             varchar2(1024)
+    , creator             varchar2(1024)
+    , producer            varchar2(1024)
+    , keywords            varchar2(8096)
+    , color               varchar2(100)
+    , bk_color            varchar2(100)
+    , meta_rdf_descr      varchar2(32767)
+    , key                 raw(128)
+    , fonts               tp_fonts
+    , pages               tp_pages
+    , images              tp_images
+    , egs_dir             tp_egs_dir
+    , objects             tp_objects
+    , font_code_cache     tp_matrix
+    , font_glyph_cache    tp_matrix
+    , font_width_cache    tp_matrix
+    , font_old_new        tp_matrix
+    , gsub_gpos           tp_font_gsub_gpos
+    , gdef                tp_font_gdef
+    , page_procs          tp_page_procs
+    , page_settings       tp_settings
+    , embedded_files      tp_embedded_files
+    , font_files          tp_blobs
     );
   type tp_color_names is table of varchar2(6) index by varchar2(20);
   --
@@ -775,55 +914,477 @@ $END
   function encrypt_rc4( p_src blob, p_key raw )
   return blob
   is
-    type tp_sbox is table of pls_integer index by pls_integer;
+    l_rv   blob;
+    l_src  varchar2(32767);
+    l_xor  varchar2(32767);
     l_i    pls_integer;
     l_j    pls_integer;
     l_sz   pls_integer;
-    l_len  pls_integer;
     l_tmp  pls_integer;
+    l_tmp2 pls_integer;
+    l_init constant varchar2(512) := substr( rpad( p_key, 512, p_key ), 1, 512 );
+    type tp_sbox is table of pls_integer index by pls_integer;
     l_arcfour tp_sbox;
-    l_init raw(256);
-    l_src  raw(32767);
-    l_encr raw(32767);
-    l_rv blob;
   begin
     for i in 0 .. 255
     loop
       l_arcfour(i) := i;
     end  loop;
-    l_len := utl_raw.length( p_key );
-    l_init := utl_raw.substr( utl_raw.copies( p_key, ceil( 256 / l_len ) * l_len ), 1, 256 );
     l_j := 0;
     for i in 0 .. 255
     loop
-      l_j := bitand( l_j + l_arcfour( i ) + to_number( utl_raw.substr( l_init, i + 1, 1 ), 'XX' ), 255 );
+      l_j := bitand( l_j + l_arcfour( i ) + g_hex( substr( l_init, 1 + 2 * i, 2 ) ), 255 );
       l_tmp := l_arcfour( i ) ;
       l_arcfour( i ) := l_arcfour( l_j );
       l_arcfour( l_j ) := l_tmp;
     end  loop;
+    --
     l_i := 0;
     l_j := 0;
-    --
-    l_sz := 32767;
+    l_sz := 16380;
     dbms_lob.createtemporary( l_rv, true );
+    --
     for i in 0 .. trunc( ( dbms_lob.getlength( p_src ) - 1 ) / l_sz )
     loop
-      l_encr := null;
-      l_src := dbms_lob.substr( p_src, l_sz, 1 + i * l_sz );
-      l_len := utl_raw.length( l_src );
-      for j in 1 .. l_len
+      l_xor := null;
+      l_src := dbms_lob.substr( p_src, 2 * l_sz, 1 + 2* i * l_sz );
+      for j in 0 .. length( l_src ) / 2 - 1
       loop
         l_i := bitand( l_i + 1, 255 );
         l_j := bitand( l_j + l_arcfour( l_i ), 255 );
         l_tmp := l_arcfour( l_i  );
         l_arcfour( l_i ) := l_arcfour( l_j );
         l_arcfour( l_j ) := l_tmp;
-        l_encr := utl_raw.concat( l_encr, to_char( l_arcfour( bitand( l_arcfour( l_i ) + l_tmp, 255 ) ), 'fm0x' ) );
+        --
+        l_tmp  := l_arcfour( bitand( l_arcfour( l_i ) + l_tmp, 255 ) );
+        l_tmp2 := g_hex( substr( l_src, 1 + 2 * j, 2 ) );
+        l_xor := l_xor || to_char( bitand( l_tmp + l_tmp2 - 2 * bitand( l_tmp, l_tmp2 ), 255 ), 'fm0x' );
       end loop;
-      dbms_lob.writeappend( l_rv, l_len, utl_raw.bit_xor( l_src, l_encr ) );
-    end  loop;
+      dbms_lob.writeappend( l_rv, length( l_xor ) / 2, l_xor );
+    end loop;
+    --
     return l_rv;
   end encrypt_rc4;
+  --
+  function xjv
+    ( p_json varchar2 character set any_cs
+    , p_path varchar2
+    , p_unescape varchar2 := 'Y'
+    )
+  return varchar2 character set p_json%charset
+  is
+    c_double_quote  constant varchar2(4)  character set p_json%charset := u'"';
+    c_single_quote  constant varchar2(4)  character set p_json%charset := u'''';
+    c_back_slash    constant varchar2(4)  character set p_json%charset := u'\\';
+    c_space         constant varchar2(4)  character set p_json%charset := u' ';
+    c_colon         constant varchar2(4)  character set p_json%charset := u':';
+    c_comma         constant varchar2(4)  character set p_json%charset := u',';
+    c_end_brace     constant varchar2(4)  character set p_json%charset := u'}';
+    c_start_brace   constant varchar2(4)  character set p_json%charset := u'{';
+    c_end_bracket   constant varchar2(4)  character set p_json%charset := u']';
+    c_start_bracket constant varchar2(4)  character set p_json%charset := u'[';
+    c_ht            constant varchar2(4)  character set p_json%charset := unistr( '\0009' );
+    c_lf            constant varchar2(4)  character set p_json%charset := unistr( '\000A' );
+    c_cr            constant varchar2(4)  character set p_json%charset := unistr( '\000D' );
+    c_ws            constant varchar2(12) character set p_json%charset := c_space || c_ht || c_cr || c_lf;
+    --
+    g_idx number;
+    g_end number;
+    --
+    l_nchar boolean := isnchar( c_space );
+    l_pos number;
+    l_ind number;
+    l_start number;
+    l_rv_end number;
+    l_rv_start number;
+    l_path varchar2(32767);
+    l_name varchar2(32767);
+    l_tmp_name varchar2(32767);
+    l_rv varchar2(32767) character set p_json%charset;
+    l_chr varchar2(10) character set p_json%charset;
+    l_cnt pls_integer;
+    --
+    procedure skip_whitespace
+    is
+    begin
+      while substrc( p_json, g_idx, 1 ) in ( c_space, c_lf, c_cr, c_ht )
+      loop
+        g_idx:= g_idx+ 1;
+      end loop;
+      if g_idx > g_end
+      then
+        raise_application_error( -20001, 'Unexpected end of JSON' );
+      end if;
+    end;
+    --
+    procedure skip_value;
+    procedure skip_array;
+    --
+    procedure skip_object
+    is
+    begin
+      if substrc( p_json, g_idx, 1 ) = c_start_brace
+      then
+        g_idx := g_idx + 1;
+        loop
+          skip_whitespace;
+          exit when substrc( p_json, g_idx, 1 ) = c_end_brace; -- empty object or object with "trailing comma"
+          skip_value; -- skip name
+          skip_whitespace;
+          if substrc( p_json, g_idx, 1 ) != c_colon
+          then
+            raise_application_error( -20002, 'No valid JSON, expected a colon at position ' || g_idx );
+          end if;
+          g_idx := g_idx + 1; -- skip colon
+          skip_value; -- skip value
+          skip_whitespace;
+          case substrc( p_json, g_idx, 1 )
+            when c_comma then g_idx := g_idx + 1;
+            when c_end_brace then exit;
+            else raise_application_error( -20003, 'No valid JSON, expected a comma or end brace at position ' || g_idx );
+          end case;
+        end loop;
+        g_idx := g_idx + 1;
+      end if;
+    end;
+    --
+    procedure skip_array
+    is
+    begin
+      if substrc( p_json, g_idx, 1 ) = c_start_bracket
+      then
+        g_idx := g_idx + 1;
+        loop
+          skip_whitespace;
+          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket; -- empty array or array with "trailing comma"
+          skip_value;
+          skip_whitespace;
+          case substrc( p_json, g_idx, 1 )
+            when c_comma then g_idx := g_idx + 1;
+            when c_end_bracket then exit;
+            else raise_application_error( -20004, 'No valid JSON, expected a comma or end bracket at position ' || g_idx );
+          end case;
+        end loop;
+        g_idx := g_idx + 1;
+      end if;
+    end;
+    --
+    procedure skip_value
+    is
+    begin
+      skip_whitespace;
+      case substrc( p_json, g_idx, 1 )
+        when c_double_quote
+        then
+          loop
+            g_idx := instrc( p_json, c_double_quote, g_idx + 1 );
+            exit when substrc( p_json, g_idx - 1, 1 ) != c_back_slash
+                   or g_idx = 0
+                   or (   substrc( p_json, g_idx - 2, 2 ) = c_back_slash || c_back_slash
+                      and substrc( p_json, g_idx - 3, 1 ) != c_back_slash
+                      ); -- doesn't handle cases of values ending with multiple (escaped) \
+          end loop;
+          if g_idx = 0
+          then
+            raise_application_error( -20005, 'No valid JSON, no end string found' );
+          end if;
+          g_idx := g_idx + 1;
+        when c_single_quote  -- lax parsing
+        then
+          g_idx := instrc( p_json, c_single_quote, g_idx + 1 );
+          if g_idx = 0
+          then
+            raise_application_error( -20006, 'No valid JSON, no end string found' );
+          end if;
+          g_idx := g_idx + 1;
+        when c_start_brace
+        then
+          skip_object;
+        when c_start_bracket
+        then
+          skip_array;
+        else -- should be a JSON-number, TRUE, FALSE or NULL, but we don't check for it
+             -- any whitespace after this value is also skipped
+          g_idx := least( coalesce( nullif( instrc( p_json, c_comma, g_idx ), 0 ), g_end + 1 )
+                        , coalesce( nullif( instrc( p_json, c_end_brace, g_idx ), 0 ), g_end + 1 )
+                        , coalesce( nullif( instrc( p_json, c_end_bracket, g_idx ), 0 ), g_end  + 1 )
+                        );
+          if g_idx = g_end + 1
+          then
+            raise_application_error( -20007, 'No valid JSON, no end string found' );
+          end if;
+      end case;
+    end;
+  begin
+    if p_json is null
+    then
+      return null;
+    end if;
+    l_path := ltrim( p_path, c_ws || '$.' );
+    if l_path is null
+    then
+      return null;
+    end if;
+    g_idx := 1;
+    g_end := lengthc( p_json );
+    for i in 1 .. 20 -- max 20 levels deep in p_path
+    loop
+      l_path := ltrim( l_path, c_ws );
+      l_pos := least( nvl( nullif( instrc( l_path, '.' ), 0 ), 32768 )
+                    , nvl( nullif( instrc( l_path, c_start_bracket ), 0 ), 32768 )
+                    , nvl( nullif( instrc( l_path, c_end_bracket ), 0 ), 32768 )
+                    );
+      if l_pos = 32768
+      then
+        l_name := l_path;
+        l_path := null;
+      elsif substrc( l_path, l_pos, 1 ) = '.'
+      then
+        l_name := substrc( l_path, 1, l_pos - 1 );
+        l_path := substrc( l_path, l_pos + 1 );
+      elsif substrc( l_path, l_pos, 1 ) = c_start_bracket and l_pos > 1
+      then
+        l_name := substrc( l_path, 1, l_pos - 1 );
+        l_path := substrc( l_path, l_pos );
+      elsif substrc( l_path, l_pos, 1 ) = c_start_bracket and l_pos = 1
+      then
+        l_pos := instrc( l_path, c_end_bracket );
+        if l_pos = 0
+        then
+          raise_application_error( -20008, 'No valid path, end bracket expected' );
+        end if;
+        l_name := substrc( l_path, 1, l_pos );
+        if substrc( l_path, l_pos + 1, 1 ) = '.'
+        then
+          l_path := substrc( l_path, l_pos + 2 );
+        else
+          l_path := substrc( l_path, l_pos + 1 );
+        end if;
+      end if;
+      l_name := rtrim( l_name, c_ws );
+      --
+      skip_whitespace;
+      if substrc( p_json, g_idx, 1 ) = c_start_brace and substrc( l_name, 1, 1 ) != c_start_bracket
+      then -- search for a name inside JSON object
+           -- json unescape name?
+        l_cnt := 0;
+        loop
+          g_idx := g_idx + 1; -- skip start brace or comma
+          skip_whitespace;
+          if substrc( p_json, g_idx, 1 ) = c_end_brace
+          then
+            return case when l_name = 'length()' and l_path is null then l_cnt end;
+          elsif substrc( p_json, g_idx, 1 ) = c_comma
+          then  -- two commas without a key-value pair in between is strictly not valid JSON
+            continue;
+          end if;
+          l_start := g_idx;
+          skip_value;  -- skip a name
+          l_tmp_name := substrc( p_json, l_start, g_idx - l_start ); -- look back to get the name skipped
+           -- json unescape name?
+          skip_whitespace;
+          if substrc( p_json, g_idx, 1 ) != c_colon
+          then
+            raise_application_error( -20002, 'No valid JSON, expected a colon at position ' || g_idx );
+          end if;
+          g_idx := g_idx + 1;  -- skip colon
+          skip_whitespace;
+          l_rv_start := g_idx;
+          skip_value;
+          if l_tmp_name in ( c_double_quote || l_name || c_double_quote
+                           , c_single_quote || l_name || c_single_quote
+                           , l_name
+                           )
+          then
+            l_rv_end := g_idx;
+            exit;
+          else
+            l_cnt := l_cnt + 1;
+            skip_whitespace;
+            if substrc( p_json, g_idx, 1 ) = c_comma
+            then
+              null; -- OK, keep on searching for name
+            else
+              -- searched name not found
+              return case when l_name = 'length()' and l_path is null then l_cnt end;
+            end if;
+          end if;
+        end loop;
+      elsif substrc( p_json, g_idx, 1 ) = c_start_bracket and substrc( l_name, 1, 1 ) = c_start_bracket
+      then
+        begin
+          l_ind := to_number( rtrim( ltrim( l_name, c_start_bracket ), c_end_bracket ) );
+        exception
+          when value_error
+          then
+            raise_application_error( -20009, 'No valid path, array index number expected' );
+        end;
+        for i in 0 .. l_ind loop
+          g_idx := g_idx + 1; -- skip start bracket or comma
+          skip_whitespace;
+          if substrc( p_json, g_idx, 1 ) = c_end_bracket
+          then
+            return null;
+          end if;
+          l_rv_start := g_idx;
+          skip_value;
+          if i = l_ind
+          then
+            l_rv_end := g_idx;
+            if l_rv_end = l_rv_start
+            then
+              return null;
+            end if;
+            exit;
+          else
+            skip_whitespace;
+            if substrc( p_json, g_idx, 1 ) = c_comma
+            then
+              null; -- OK
+            else
+              return null;
+            end if;
+          end if;
+        end loop;
+      elsif substrc( p_json, g_idx, 1 ) = c_start_bracket and l_name = 'length()' and l_path is null
+      then
+        l_cnt := 0;
+        loop
+          g_idx := g_idx + 1; -- skip start bracket or comma
+          skip_whitespace;
+          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket;
+          l_cnt := l_cnt + 1;
+          skip_value;
+          skip_whitespace;
+          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket;
+          if substrc( p_json, g_idx, 1 ) != c_comma
+          then
+            raise_application_error( -20010, 'No valid JSON, expected a comma at position ' || g_idx );
+          end if;
+        end loop;
+        return l_cnt;
+      else
+        return null;
+      end if;
+      exit when l_path is null;
+      g_idx := l_rv_start;
+      g_end := l_rv_end - 1;
+    end loop;
+    if (  (   substrc( p_json, l_rv_start, 1 ) = c_double_quote
+          and substrc( p_json, l_rv_end - 1, 1 ) = c_double_quote
+          )
+       or (   substrc( p_json, l_rv_start, 1 ) = c_single_quote
+          and substrc( p_json, l_rv_end - 1, 1 ) = c_single_quote
+          )
+       )
+    then
+      l_rv_start := l_rv_start + 1;
+      l_rv_end := l_rv_end - 1;
+    end if;
+    l_pos := instrc( p_json, c_back_slash, l_rv_start );
+    if l_pos = 0 or l_pos >= l_rv_end or nvl( substrc( upper( p_unescape ), 1, 1 ), 'Y' ) = 'N'
+    then -- no JSON unescaping needed
+      return trim( substrc( p_json, l_rv_start, l_rv_end - l_rv_start ) );
+    end if;
+    l_start := l_rv_start;
+    loop
+      l_chr := substrc( p_json, l_pos + 1, 1 );
+      if l_chr in ( '"', '\', '/' )
+      then
+        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+      elsif l_chr in ( 'b', 'f', 'n', 'r', 't' )
+      then
+        l_chr := translate( l_chr
+                          , 'btnfr'
+                          , chr(8) || chr(9) || chr(10) || chr(12) || chr(13)
+                          );
+        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+      elsif l_chr = 'u'
+      then -- unicode character
+        if l_nchar
+        then
+          l_chr := utl_i18n.raw_to_nchar( hextoraw( substrc( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
+        else
+          l_chr := utl_i18n.raw_to_char( hextoraw( substrc( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
+        end if;
+        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+        l_pos := l_pos + 4;
+      else
+        raise_application_error( -20011, 'No valid JSON, unexpected back slash  at position ' || l_pos );
+      end if;
+      l_start := l_pos + 2;
+      l_pos := instrc( p_json, c_back_slash, l_start );
+      if l_pos = 0 or l_pos >= l_rv_end
+      then
+        l_rv := l_rv || substrc( p_json, l_start, l_rv_end - l_start );
+        exit;
+      end if;
+    end loop;
+    return trim( l_rv );
+  end xjv;
+  --
+  -- convert a JSON number from xjv stored in a varchar2 result to number
+  function jvs2n( p_val varchar2 )
+  return number
+  is
+    l_pos pls_integer;
+    l_fmt varchar2(32767) := upper( translate( p_val, '012345678, ', '999999999' ) );
+  begin
+    l_pos := instr( l_fmt, 'E' );
+    if l_pos > 0
+    then
+      l_fmt := substr( l_fmt, 1, l_pos ) || 'EEE';
+    end if;
+    return to_number( rtrim( ltrim( p_val, '+ ' ) ), ltrim( l_fmt, '+-' ), 'NLS_NUMERIC_CHARACTERS = ''.,''' );
+  exception
+    when others then return null;
+  end jvs2n;
+  --
+  function jvs2n( p_options varchar2 character set any_cs, p_path varchar2 )
+  return number
+  is
+  begin
+    return coalesce( jvs2n( xjv( p_options, p_path ) )
+                   , conv2uu( jvs2n( xjv( p_options, p_path || '.value' ) ), xjv( p_options, p_path || '.unit' ) )
+                   );
+  end jvs2n;
+  --
+  function jvs2b( p_options varchar2 character set any_cs, p_path varchar2 )
+  return boolean
+  is
+  begin
+    return coalesce( upper( rtrim( ltrim( xjv( p_options, p_path ) ) ) ) = 'TRUE', false );
+  end jvs2b;
+  --
+  function gfi( p_font_index pls_integer )
+  return pls_integer
+  is
+  begin
+    if p_font_index is not null and g_pdf.fonts.exists( p_font_index )
+    then
+      return p_font_index;
+    end if;
+    if g_pdf.current_font is null
+    then
+      set_font( p_family => 'helvetica' );
+    end if;
+    return g_pdf.current_font;
+  end gfi;
+  --
+  procedure annot
+    ( p_subtype    varchar2
+    , p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_txt_color  varchar2    := null
+    , p_color      varchar2    := null
+    , p_url        varchar2    := null
+    , p_put_txt    boolean     := true
+    , p_page_proc  pls_integer := null
+    );
   --
   procedure set_info
     ( p_title    varchar2 := null
@@ -844,7 +1405,12 @@ $END
   procedure set_pdf_version( p_version number := 1.4 )
   is
   begin
-    g_pdf.pdf_version := coalesce( p_version, 1.4 );
+    if p_version is null
+    then
+      set_pdf_version;
+    else
+      g_pdf.pdf_version := p_version;
+    end if;
   end set_pdf_version;
   --
   procedure set_pdfA3
@@ -857,24 +1423,70 @@ $END
     g_pdf.meta_rdf_descr := p_extra_meta_data_descriptions;
   end set_pdfA3;
   --
+  procedure set_proxy
+    ( p_proxy            varchar2
+    , p_no_proxy_domains varchar2 := null
+    )
+  is
+  begin
+    g_proxy := p_proxy;
+    g_no_proxy := p_no_proxy_domains;
+  end set_proxy;
+  --
+  procedure set_wallet
+    ( p_path     varchar2
+    , p_password varchar2 := null
+    )
+  is
+  begin
+    g_wallet_path := p_path;
+    g_wallet_password := p_password;
+  end set_wallet;
+  --
   procedure set_initial_zoom( p_zoom_factor number := null )
   is
   begin
     g_pdf.zoom := p_zoom_factor;
   end set_initial_zoom;
   --
-  procedure set_line_height_factor( p_factor number := 1 )
+  procedure set_open_type_features
+    ( p_enabled_features varchar2 := null
+    , p_script           varchar2 := null
+    , p_language         varchar2 := null
+    , p_apply_GSUB       boolean  := null
+    , p_apply_GPOS       boolean  := null
+    )
   is
   begin
-    g_pdf.line_height_factor := coalesce( p_factor, 1 );
-  end set_line_height_factor;
+null;
+  end set_open_type_features;
+  --
+  procedure set_current_page( p_page number )
+  is
+  begin
+    if p_page between 0 and g_pdf.pages.count - 1
+    then
+      g_pdf.current_page := p_page;
+    end if;
+  end set_current_page;
+  --
+  procedure set_line_spacing_factor( p_factor number := 1.2 )
+  is
+  begin
+    if p_factor is null
+    then
+      set_line_spacing_factor;
+    else
+      g_pdf.line_spacing_factor := p_factor;
+    end if;
+  end set_line_spacing_factor;
   --
   function conv2uu( p_value number, p_unit varchar2 )
   return number
   is
     c_inch constant number := 25.40025;
   begin
-    return round( case lower( p_unit )
+    return round( case coalesce( lower( p_unit ), 'cm' )
                     when 'mm'    then p_value * 72 / c_inch
                     when 'cm'    then p_value * 720 / c_inch
                     when 'point' then p_value
@@ -884,6 +1496,8 @@ $END
                     when 'pica'  then p_value * 12
                     when 'p'     then p_value * 12  -- also pica
                     when 'pc'    then p_value * 12  -- also pica
+                    when 'px'    then p_value * 1.0007 -- Jasper Reports pixel
+                    when 'pixel' then p_value * 1.0007 -- Jasper Reports pixel
                     else null
                   end
                 , 3
@@ -899,6 +1513,7 @@ $END
                         , p_margin_top       number
                         , p_margin_bottom    number
                         , p_unit             varchar2
+                        , p_text_direction   varchar2
                         , p_settings in out tp_settings
                         )
   is
@@ -977,6 +1592,12 @@ $END
       p_settings.margin_right  := p_settings.margin_top;
       p_settings.margin_top    := l_swap;
     end if;
+    if upper( p_text_direction ) in ( 'L2R', 'R2L' )
+    then
+      p_settings.text_direction := upper( p_text_direction );
+    else
+      p_settings.text_direction := coalesce( g_pdf.page_settings.text_direction, 'L2R' );
+    end if;
   end set_settings;
   --
   procedure set_page_format( p_format varchar2 := 'A4' )
@@ -990,6 +1611,12 @@ $END
   begin
     init_pdf( p_page_orientation => p_orientation );
   end;
+  --
+  procedure set_text_direction( p_text_direction varchar2 := 'L2R' )
+  is
+  begin
+    init_pdf( p_text_direction => p_text_direction );
+  end set_text_direction;
   --
   procedure set_page_size
     ( p_width  number
@@ -1009,7 +1636,7 @@ $END
     , p_left number   := null
     , p_bottom number := null
     , p_right number  := null
-    , p_unit varchar2 := 'cm'
+    , p_unit varchar2 := null
     )
   is
   begin
@@ -1060,12 +1687,14 @@ $END
       l_font.fontname := p_name;
       l_font.standard := true;
       l_font.flags    := p_flags;
-      l_font.char_width_tab := uncompress_withs( p_compressed_tab );
       l_font.unit_norm := 1;
       l_font.ascent  := p_ascent;
       l_font.descent := p_descent;
       l_font.linegap := p_linegap;
+      l_font.win_ascent := p_ascent + 0.5 * p_linegap;
+      l_font.win_descent := p_descent - 0.5 * p_linegap;
       g_pdf.fonts( p_ind ) := l_font;
+      g_pdf.font_width_cache( - p_ind ) := uncompress_withs( p_compressed_tab );
     end;
   begin
     init_core_font( 1, 'helvetica', 'N', 'Helvetica', 32, 800, -200, 90
@@ -1135,17 +1764,17 @@ $END
     init_core_font( 9, 'courier', 'N', 'Courier', 33, 800, -200, 90, null );
     for i in 0 .. 255
     loop
-      g_pdf.fonts( 9 ).char_width_tab( i ) := 600;
+      g_pdf.font_width_cache( - 9 )( i ) := 600;
     end loop;
     --
     init_core_font( 10, 'courier', 'I', 'Courier-Oblique', 97, 800, -200, 90, null );
-    g_pdf.fonts( 10 ).char_width_tab := g_pdf.fonts( 9 ).char_width_tab;
+    g_pdf.font_width_cache( - 10 ) := g_pdf.font_width_cache( - 9 );
     --
     init_core_font( 11, 'courier', 'B', 'Courier-Bold', 33, 800, -200, 90, null );
-    g_pdf.fonts( 11 ).char_width_tab := g_pdf.fonts( 9 ).char_width_tab;
+    g_pdf.font_width_cache( - 11 ) := g_pdf.font_width_cache( - 9 );
     --
     init_core_font( 12, 'courier', 'BI', 'Courier-BoldOblique', 97, 800, -200, 90, null );
-    g_pdf.fonts( 12 ).char_width_tab := g_pdf.fonts( 9 ).char_width_tab;
+    g_pdf.font_width_cache( - 12 ) := g_pdf.font_width_cache( - 9 );
     --
     init_core_font( 13, 'symbol', 'N', 'Symbol', 4, 800, -200, 90
       ,  'H4sIAAAAAAAAC82SIU8DQRCFZ28xIE+cqcbha4tENKk/gQCJJ6AweIK9H1CHqKnp'
@@ -1214,23 +1843,181 @@ $END
     end loop;
   end init_color_names;
   --
+  procedure init_unicode_data
+  is
+    procedure init_some_unicode_data( p_start pls_integer, p_class pls_integer, p_end pls_integer := null )
+    is
+    begin
+      for i in p_start .. coalesce( p_end, p_start )
+      loop
+        g_unicode_data( i ) := p_class;
+      end loop;
+    end init_some_unicode_data;
+    --
+    procedure init_some_compr_unicode_data( p_class pls_integer, p_cmpr varchar2 )
+    is
+      l_len  pls_integer;
+      l_pos1 pls_integer;
+      l_pos2 pls_integer;
+      l_pos3 pls_integer;
+      l_tmp varchar2(32767);
+    begin
+      l_tmp := utl_raw.cast_to_varchar2( utl_compress.lz_uncompress( utl_encode.base64_decode( utl_raw.cast_to_raw( p_cmpr ) ) ) );
+      l_tmp := l_tmp || ';';
+      l_len := length( l_tmp );
+      l_pos1 := 1;
+      loop
+        exit when l_pos1 > l_len;
+        l_pos2 := instr( l_tmp, ';', l_pos1 + 1 ) + 1;
+        l_pos3 := instr( l_tmp, ';', l_pos2 );
+        exit when l_pos2 = 1 or l_pos3 = 0;
+        init_some_unicode_data( substr( l_tmp, l_pos1, l_pos2 - l_pos1 - 1 ), p_class, substr( l_tmp, l_pos2, l_pos3 - l_pos2 ) );
+        l_pos1 := l_pos3 + 1;
+      end loop;
+    end init_some_compr_unicode_data;
+    --
+  begin
+    --
+    init_some_compr_unicode_data( c_class_ON,
+        'H4sIAAAAAAAAAy2U2xXEIAgFWxJQgWP/fe1csh8ZEiTyEIx4sV/U2/5Ov7tf2+v7' ||
+        'zIMHee0BvfSzNB7n2TznWS0WC0WhqHzGz27nPd/53u3kqZfrvrR+6f4yzsttPHwf' ||
+        '5M1X/F11XvV+r9fiIYYV7L0MlW0r0U3A29kDIjxnCQrryCaJ8vkiH194iUVOscgK' ||
+        '3PfC2oUiY0GOzloFLN8xJ5+TJALqXXMhyML2BgdsNhNLoGCXgO49RG9O4jCFBgQA' ||
+        'AhzpjnSpz5R16bPXK8d/eWDsmwWXnV991n0VNsAkwgVqtXcJ2G1SB9KdK+BIscFc' ||
+        'gguyrhAU4SY/kUrV4WgAf5G8oE/XG8kA/lSd6+h4TsmOClZyFGDrpAKweRtptBmn' ||
+        '58TTXnojvw527iDQ3pxWV/drFd6WBz21ttrNpuFsWs5UL5FVFNLv/ljwWAy1mil7' ||
+        'IoO9tujS45T2XbKhG+gWV21hznvFUKveo/lanvOHQacg1GQwhjJVDuZ7NJuGENV0' ||
+        'fsgDkaFNUkPipTDwow2rhq0A2vdQlp0pMjMWS8FDNDGjBUkq/E92izDNYk+e3QwO' ||
+        'E+GaXI3g9rNaxGjTPpgi3IcB8+g9OchNRMS9YxE+JK3NIe0hu0ZpPxj0uFIQ7d2z' ||
+        'OHaJvYYtUtB7jGEVzxtRI2wNS/R5dxvu4R1+pjH7etnQh1pX/9wTVAWa9BHyGhrH' ||
+        'Eyn7mL/UyKK8nbE845ktxFB8SRMh6si0w4fzvmXaFOhdpl/B1KaakMuMa4xbCLJJ' ||
+        'EvcW6TuOm2LC9mHC1DhsHd3Xind6kWEecUZLTBKXS4q6/HuHiypH6iqR1E4jFQ5e' ||
+        'U6cuoS7C2bTa1+C5pqnyu7P5cdZMV6PEp7z5ifnB6lOWNuNathHT2KmrWyL/PT1h' ||
+        '5jcHuddEx2W7PzHb5QwDF0KOGP+Vu0YoW8T9TO4oa/xXzdRxE89azyRy/8eIb1BW' ||
+        'zNSo5SS+GbKpBZfNWNpMbc91gRgPbT2z5Wt9wkbMIPZefzH+9sTSe2rRdyrK4cza' ||
+        '3Z9yUul7PuW5n/iUkxjTOHvez8N3WPSNf2Is0z8Rn8n+TM739eXeU+zuL1vkD3nV' ||
+        'anifBwAA' );
+    --
+    init_some_compr_unicode_data( c_class_NSM,
+        'H4sIAAAAAAAAAy2WWZYFIQjFtuSIet7+99XJrf4JJeIESHnq/u55v973BtV/fQ2+' ||
+        'VqFbp//kFEuUOOLRs/cABaozsKZYl56zmyjBRKeWOOKCY6/T3uY8d9G+hfXbdD9s' ||
+        'RhsHzA3W/kHGgClUXr9uvjS8Dzx0fR5Bc2zhiOGI2QqwWblC+udRe7ttZ5uv/8Zq' ||
+        'QzByzUnPeiNk5t2aYNdjTz8589jsGpafLDBqtJ/cgvl1DLDHA5VbrOWadVS6x8Kt' ||
+        '0HPUY+KjH9n4FEfQc8qe0h/nlqDn9ia2cI7LkaR7vJwMLPA8yWtdsOjrSzDqLexn' ||
+        'a1eOLtmVVN/nEgXWEDZXmg+wNXAB8QH9N0dzjsFWIXMAjMa7gjFzXOEX2wc22R3A' ||
+        'eDVON9fwkxSYixV+U19LTDfJAtxhGR2Ibbm5IodnEQGi6h5Mu3mO7esXzp1X3cWF' ||
+        'Mx6BO3SVh7fZRAlWeo58JD7A/uHL+V4wf+TIBezotzqxXHpm6ZnVt03mAuo4wdJH' ||
+        'i0QXGxBiMH6LrAXdL84sbXNccGwzz28953ikwH6kMbhgCryx3wn6rxqhBRNwAvBA' ||
+        'OohBNXJGqiQS1c3j8uaXmywDBRhIxOlZpCxYAvPFWrW42fIIlHXEbcIxx8hABlkE' ||
+        'QNo4QjLKoJDs7Ok46mTUdaVLytfDFWVe1vOWluEoD1iGQ+Lx0/oD5MdpbAp0QKSO' ||
+        '5zztqrvqmP1YJo7ZK5dI+9kmVMdQHUMAmHYMvwY6iwO4wBkn8QLMsKgCJ5l6Vh9h' ||
+        'CdYuv7zRYIv3u5pfnUmVJTYyxXYR4N71FcS6j0ngJUZjcShpahA/2VsYDTcVmmDD' ||
+        'vOeycA8klrNhGbE+8SI4tyxpWNhSW6Edgw1C/ALLrGM3I1Q1p0Yzc+gJ6eC1Yroy' ||
+        '7crotUc45Uu3xVFWqNEmpnKGzrTvienzHnCjs/f6b1E+1jythTN0zOnR9B5mKX87' ||
+        'Uj+ccjT+35+4EV9yj9yG3caSJjhhKWlyVn47FJNkHdYjpJ9/1gkZQe3t4Qiv7NHs' ||
+        'aAiPfF+K79ApHgeRXNRHFQ7Ne70I3cZLdUPcmwtgtz8BWA64/eMKT6jljT1zwzfU' ||
+        'v9lDF3u5LlYIhbkKvTL+X+WV19vVTHe4v/vWwxnWp7phbmKLavKLV5we3lzP3M+m' ||
+        'xoIBKxpv92m4P9R093xnUyffJ9f8jHyPXO+RhSwtud1b5kw3FxyRArBu7n06cscb' ||
+        'DpEcoHf31A2d/DTWhc4NkGpSCro1WaZWjNlDjUh+VdO/uGKFDpk7KrNfptRQ/GH1' ||
+        'MHocdfoZoYfo3lup5Xs7rNB6N76Ije65RqrWMLnklv5tLV+pZAZm+BuWKWZrhtFn' ||
+        '8MjgXPOTR5JM9023dTPVCK4RrtDVrOlSe58kJ2+SM+JvXh491P7eaO4IZxjLa2Ul' ||
+        'uSQpLD0nBaeFPZxhjKZenYkT3OGLqqcnuTXNLS/UCEuekB2Q+k6CwL3yQl6g1uB5' ||
+        'WTHCIs3baH5iR9TX8tWq+G/5aH6jt09E6fMygoo+khUKFkL4nlT4Zh5JhkgfWUqu' ||
+        'EWJ/Rvk/GGaVcWJEfcLpeMStT5wI1x95z0XUJz5Lz0Tu3hXx8oepcSN8spMRsyKW' ||
+        'lnvsf4GD+C/pUk773h+b4qxfLAwAAA==' );
+    --
+    init_some_compr_unicode_data( c_class_R,
+        'H4sIAAAAAAAAAyWSURYFMQRDt9QqFaf739ckmZ/LIIr3dvZ6b2eHWSZE4O3aKQwR' ||
+        '9Ab5YsUljtFEUknq+w7RqW/8hDjM7b2EICTdUoHF790M1G9aZLUI8lAkhnlNqPSE' ||
+        'E7HNY6bpolPvdnEEccThczIKXY4tKnFzmflsnLhONHt3c0yy7JfiWBD1Dvn7jvtN' ||
+        'XHVAS4WRP+uo9VyWYmlU0r4ew6olamfoOmKZbY6oNbHT/l2mOuy2Smtij7RR0gaU' ||
+        '9UFwjrRHa3BCMZdqUtdE6hJI3QB5HWnXaHSUK0sLozxDheLXEU5N9pGKe5NYiqB+' ||
+        'qgaX+04kRP0QE6NzjH9kku3maI1JrT2lEadapVft5ka8HUk5TW39C2XahjeXgYN0' ||
+        'fjPP9v7RPr/Bb+YD9ENq3PECAAA=' );
+    --
+    init_some_compr_unicode_data( c_class_AL,
+        'H4sIAAAAAAAAAy2Q0RXAIAgDVxIEhNf992og/NxZxCgVN/s+cXvDasZtWCM+CTmA' ||
+        'eeM16pM3CG+g5T1r9GfiM483XiOBDsiLExlAOTYKq08Fdytu/VTRqKqNewDcFHZv' ||
+        'gIa7wOhKaq/TEiyRoTV71w9CQD2g9FkXm7UpqA+VTMwFFnLK1JoYDcSrwB5J41By' ||
+        'taWnRjGy/jGtR7FYTrFY2cJ7PvqupwnPoYKaAFdhj27v3bPX129dtAl1KSYbI/F7' ||
+        'xr6Zvpm+Wb5ZvlnBrFDKtjqz+DsUNx8nSxaTtydvT+7VvrzmRByhpjU4bahTj2Lx' ||
+        'suVyz+UHrZiRP5sCAAA=' );
+    --
+    init_some_compr_unicode_data( c_class_EN,
+        'H4sIAAAAAAAAAyXM2Q1EMQhD0ZYAh03uv68x8z5yLkIib5hN79Fb+iQ1dN0mObDH' ||
+        'c4RDhB3LRYZoZ2VsSViyKhrn6quwnrjoVOlA/PMUmOHL8x9BUEQKggAAAA==' );
+    --
+    init_some_compr_unicode_data( c_class_BN,
+        'H4sIAAAAAAAAAyXL2w3AQAwCwZaCHfwQ/fcV7vKzYwkZnVKBI008eUJnxtk48ZUe' ||
+        'itErATnx/rRZkJcKLZr+vmYdKvEBPzS5umEAAAA=' );
+    --
+    init_some_compr_unicode_data( c_class_ET,
+        'H4sIAAAAAAAAAyXO2REAIQgD0Ja4Ajrpv68N7gdPEFETzKF3KECfVqiuSNJRWLTX' ||
+        'FWRsKkYAqo85maZBZmub7SZPlC3FkwhxkqduqTN7b2mknmDD/XKXuGuaDA2s24bV' ||
+        '88/3DNw42Tef+ly8xz/wl63aygAAAA==' );
+    --
+    init_some_compr_unicode_data( c_class_AN,
+        'H4sIAAAAAAAAAx3GwRHAMAwCsJnAGLfH/nslzkcndDloIXDx8qZaFExPQo4Sfz+4EvHFq3wA5vGEBkEAAAA=' );
+    --
+    init_some_compr_unicode_data( c_class_WS,
+        'H4sIAAAAAAAAAxXIsREAMAgDsZXAHMG533+vkEaFStBzApxXWPGpXcsDKdk8jwVK7CYAAAA=' );
+    --
+    init_some_compr_unicode_data( c_class_CS,
+        'H4sIAAAAAAAAAyXKURIAMARDwSsVoUzuf69SP29NBkAiiEtPUuJ0HH2mWk1nCZeDJZYatHTBr3etHx7/m1ofUwAAAA==' );
+    --
+    init_some_compr_unicode_data( c_class_ES,
+        'H4sIAAAAAAAAAx3HwREAIAjEwJaEA9FJ/30JfjaTEETCkcWQjdZgnHKHHX6rk9Y3qvVr/IgHi4oMjUIAAAA=' );
+    --
+    init_some_unicode_data( 8233, c_class_B );
+    init_some_unicode_data( 8234, c_class_LRE );
+    init_some_unicode_data( 8235, c_class_RLE );
+    init_some_unicode_data( 8236, c_class_PDF );
+    init_some_unicode_data( 8237, c_class_LRO );
+    init_some_unicode_data( 8238, c_class_RLO );
+    init_some_unicode_data( 8294, c_class_LRI );
+    init_some_unicode_data( 8295, c_class_RLI );
+    init_some_unicode_data( 8296, c_class_FSI );
+    init_some_unicode_data( 8297, c_class_PDI );
+    --
+  end init_unicode_data;
+  --
   procedure cleanup
   is
   begin
     for i in 1 .. g_pdf.fonts.count
     loop
-      g_pdf.fonts( i ).hmetrics.delete;
-      g_pdf.fonts( i ).code2glyph.delete;
-      g_pdf.fonts( i ).used_glyphs.delete;
-      g_pdf.fonts( i ).char_width_tab.delete;
-      if dbms_lob.istemporary( g_pdf.fonts( i ).fontfile2 ) = 1
+      if g_pdf.font_code_cache.exists( i )
       then
-        dbms_lob.freetemporary( g_pdf.fonts( i ).fontfile2 );
+        g_pdf.font_code_cache( i ).delete;
+      end if;
+      if g_pdf.font_glyph_cache.exists( i )
+      then
+        g_pdf.font_glyph_cache( i ).delete;
+      end if;
+      if g_pdf.font_width_cache.exists( i )
+      then
+        g_pdf.font_width_cache( i ).delete;
+      end if;
+      if g_pdf.font_old_new.exists( i )
+      then
+        g_pdf.font_old_new( i ).delete;
+      end if;
+      if g_pdf.font_files.exists( i ) and dbms_lob.istemporary( g_pdf.font_files( i ) ) = 1
+      then
+        dbms_lob.freetemporary( g_pdf.font_files( i ) );
       end if;
     end loop;
+    g_pdf.font_code_cache.delete;
+    g_pdf.font_glyph_cache.delete;
+    g_pdf.font_width_cache.delete;
+    g_pdf.font_old_new.delete;
+    g_pdf.font_files.delete;
+    g_pdf.gdef.delete;
+    g_pdf.gsub_gpos.delete;
+    g_pdf.fonts.delete;
     for i in 0 .. g_pdf.pages.count - 1
     loop
-      g_pdf.pages( i ).links.delete;
+      g_pdf.pages( i ).annots.delete;
       dbms_lob.freetemporary( g_pdf.pages( i ).content );
     end loop;
     for i in 1 .. g_pdf.images.count
@@ -1250,14 +2037,15 @@ $END
     loop
      dbms_lob.freetemporary( g_pdf.embedded_files( i ).content );
     end loop;
-    g_pdf.fonts.delete;
-    g_pdf.links.delete;
     g_pdf.pages.delete;
     g_pdf.images.delete;
+    g_pdf.egs_dir.delete;
     g_pdf.objects.delete;
     g_pdf.page_procs.delete;
     g_pdf.embedded_files.delete;
     g_color_names.delete;
+    g_hex.delete;
+    g_unicode_data.delete;
   end cleanup;
   --
   procedure init
@@ -1280,6 +2068,13 @@ $END
     init_pdf;
     init_core_fonts;
     init_color_names;
+    init_unicode_data;
+    --
+    g_hex.delete;
+    for i in 0 .. 255
+    loop
+      g_hex( to_char( i, 'fm0X' ) ) := i;
+    end loop;
   end init;
   --
   function blob2num( p_blob blob, p_len integer, p_pos integer )
@@ -1347,13 +2142,13 @@ $END
                           , hextoraw( '0D0A' )
                           );
     end if;
-  end;
+  end raw2page;
   --
-  procedure txt2page( p_txt varchar2, p_page pls_integer := null  )
+  procedure txt2page( p_txt varchar2, p_page pls_integer := null )
   is
   begin
     raw2page( utl_raw.cast_to_raw( p_txt ), p_page );
-  end;
+  end txt2page;
   --
   procedure font2page
     ( p_font_index pls_integer := null
@@ -1365,14 +2160,32 @@ $END
   begin
     if l_font_index is not null
     then
-      l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize, c_default_fontsize );
+      l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize );
       g_pdf.pages( g_pdf.current_page ).fontsize := l_fontsize;
       g_pdf.pages( g_pdf.current_page ).font_index := l_font_index;
+      g_pdf.current_font_index := l_font_index;
+      g_pdf.current_font_size := to_char_round( l_fontsize );
       txt2page( 'BT /F' || l_font_index || ' '
-              || to_char_round( l_fontsize ) || ' Tf ET'
+              || g_pdf.current_font_size || ' Tf ET'
               );
     end if;
   end font2page;
+  --
+  procedure font2page_i
+    ( p_font_index pls_integer
+    , p_fontsize   number
+    )
+  is
+  begin
+    if    p_font_index != g_pdf.current_font_index
+       or to_char_round( p_fontsize ) != g_pdf.current_font_size
+    then
+      font2page( p_font_index, p_fontsize );
+    elsif p_font_index is null
+    then
+      font2page( g_pdf.current_font, coalesce( g_pdf.fonts( g_pdf.current_font ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize ) );
+    end if;
+  end font2page_i;
   --
   procedure new_page( p_page_size        varchar2 := null
                     , p_page_orientation varchar2 := null
@@ -1382,7 +2195,8 @@ $END
                     , p_margin_right     number := null
                     , p_margin_top       number := null
                     , p_margin_bottom    number := null
-                    , p_unit             varchar2 := 'cm'
+                    , p_unit             varchar2 := null
+                    , p_text_direction   varchar2 := null
                     )
   is
     l_new tp_page;
@@ -1400,6 +2214,7 @@ $END
                 , p_margin_top
                 , p_margin_bottom
                 , p_unit
+                , p_text_direction
                 , l_new.settings
                 );
     dbms_lob.createtemporary( l_new.content, true );
@@ -1452,33 +2267,26 @@ $END
   is
     s1 pls_integer := 1;
     s2 pls_integer := 0;
-    l_val varchar2(32766);
-    l_pos number := 1;
-    l_len number := dbms_lob.getlength( p_val );
+    l_val  varchar2(32766);
+    l_pos  number := 1;
+    l_len  constant integer := dbms_lob.getlength( p_val );
   begin
     loop
       exit when l_pos > l_len;
       l_val := rawtohex( dbms_lob.substr( p_val, 16383, l_pos ) );
       for i in 1 .. length( l_val ) / 2
       loop
-        begin
-          s1 := s1 + to_number( substr( l_val, i * 2 - 1, 2 ), 'XX' );
-        exception
-          when others then
-            s1 := mod( s1, 65521 ) + to_number( substr( l_val, i * 2 - 1, 2 ), 'XX' );
-        end;
-        begin
-          s2 := s2 + s1;
-        exception
-          when others then
-            s2 := mod( s2, 65521 ) + s1;
-        end;
+        s1 := s1 + g_hex( substr( l_val, i * 2 - 1, 2 ) );
+        s2 := s2 + s1;
+        if s2 >= 2143305900
+        then
+          s2 := mod( s2, 65521 );
+        end if;
       end loop;
       l_pos := l_pos + 16383;
+      s1 := mod( s1, 65521 );
     end loop;
-    s1 := mod( s1, 65521 );
-    s2 := mod( s2, 65521 );
-    return to_char( s2, 'fm0XXX' ) || to_char( s1, 'fm0XXX' );
+    return to_char( mod( s2, 65521 ), 'fm0XXX' ) || to_char( s1, 'fm0XXX' );
   end adler32;
   --
   function flate_encode( p_val blob )
@@ -1487,12 +2295,7 @@ $END
     l_blob blob;
   begin
     l_blob := hextoraw( '789C' );
-    dbms_lob.copy( l_blob
-                 , utl_compress.lz_compress( p_val )
-                 , dbms_lob.lobmaxsize
-                 , 3
-                 , 11
-                 );
+    dbms_lob.copy( l_blob, utl_compress.lz_compress( p_val ), dbms_lob.lobmaxsize, 3, 11 );
     dbms_lob.trim( l_blob, dbms_lob.getlength( l_blob ) - 8 );
     dbms_lob.writeappend( l_blob, 4, hextoraw( adler32( p_val ) ) );
     return l_blob;
@@ -1653,288 +2456,1344 @@ $END
     return l_self;
   end add_image;
   --
+  function rgb( p_hex varchar2 )
+  return varchar2
+  is
+  begin
+    return to_char_round( nvl( g_hex( substr( p_hex, 1, 2 ) ) / 255
+                             , 0 ), 5 ) || ' '
+        || to_char_round( nvl( g_hex( substr( p_hex, 3, 2 ) ) / 255
+                             , 0 ), 5 ) || ' '
+        || to_char_round( nvl( g_hex( substr( p_hex, 5, 2 ) ) / 255
+                             , 0 ), 5 ) || ' ';
+  end rgb;
+  --
+  function rgb( p_color varchar2 )
+  return varchar2
+  is
+  begin
+    if g_color_names.exists( lower( p_color ) )
+    then
+      return rgb( p_hex => upper( g_color_names( lower( p_color ) ) ) );
+    else
+      return rgb( p_hex => upper( ltrim( p_color, '#' ) ) );
+    end if;
+  exception
+    when value_error then
+      return rgb( p_hex => '000000' );
+  end rgb;
+  --
+  procedure set_color( p_rgb varchar2, p_backgr boolean )
+  is
+  begin
+    if p_backgr
+    then
+      g_pdf.bk_color := rgb( p_color => p_rgb ) || 'RG ';
+      txt2page( g_pdf.bk_color );
+    else
+      g_pdf.color := rgb( p_color => p_rgb ) || 'rg ';
+      txt2page( g_pdf.color );
+    end if;
+  end set_color;
+  --
+  procedure set_color
+    ( p_red    number
+    , p_green  number
+    , p_blue   number
+    , p_backgr boolean
+    )
+  is
+  begin
+    if (     p_red between 0 and 255
+       and p_blue  between 0 and 255
+       and p_green between 0 and 255
+       )
+    then
+      set_color(  to_char( p_red, 'fm0x' )
+               || to_char( p_green, 'fm0x' )
+               || to_char( p_blue, 'fm0x' )
+               , p_backgr
+               );
+    end if;
+  end set_color;
+  --
+  procedure set_color( p_rgb varchar2 := '000000' )
+  is
+  begin
+    set_color( p_rgb, false);
+  end set_color;
+--
+  procedure set_color
+    ( p_red   number := 0
+    , p_green number := 0
+    , p_blue  number := 0
+    )
+  is
+  begin
+    set_color( p_red, p_green, p_blue, false );
+  end set_color;
+  --
+  procedure set_bk_color( p_rgb varchar2 := 'ffffff' )
+  is
+  begin
+    set_color( p_rgb, true );
+  end set_bk_color;
+--
+  procedure set_bk_color
+    ( p_red   number := 255
+    , p_green number := 255
+    , p_blue  number := 255
+    )
+  is
+  begin
+    set_color( p_red, p_green, p_blue, true );
+  end set_bk_color;
+  --
+  function uint16( p_val varchar2 )
+  return pls_integer
+  is
+  begin
+    return to_number( p_val, 'XXXX' );
+  end uint16;
+  --
+  function int16( p_val varchar2 )
+  return pls_integer
+  is
+    pragma inline( uint16, 'YES' );
+    l_uint constant pls_integer := uint16( p_val );
+  begin
+    return l_uint - case when l_uint > 32767 then 65536 else 0 end;
+  end int16;
+  --
   function subset_font( p_index pls_integer )
   return blob
   is
-    l_subset blob;
-    l_tmp    varchar2(32767);
-    l_buf    varchar2(32767);
-    l_loca   tp_pls_tab;
-    l_header varchar2(32767);
-    l_sz     pls_integer;
-    l_cnt    pls_integer;
-    l_idx    pls_integer;
-    l_len    pls_integer;
-    l_mod    pls_integer;
-    l_font   tp_font;
-    l_pos    integer;
-    l_offset integer;
---
-procedure cff( p_font blob, p_offset integer, p_len pls_integer )
-is
-  l_cff       blob;
-  l_pos       pls_integer;
-  l_off_sz    pls_integer;
-  l_operator  pls_integer;
-  l_operand   number;
-  l_offs      integer;
-  l_data_offs integer;
-  l_encoding_offs     integer;
-  l_char_set_offs     integer;
-  l_char_strings_offs integer;
-  l_private_dict_offs integer;
-  l_private_dict_cnt  pls_integer;
-  l_real      varchar2(100);
-  l_cff_buf   varchar2(32767);
-  type tp_operands is table of number index by pls_integer;
-  l_operands tp_operands;
-begin
-  l_offs := p_offset;
-  l_tmp := dbms_lob.substr( p_font, 3, l_offs );
-dbms_output.put_line( 'CFF header: ' || l_tmp );
-  -- Name INDEX
-  l_offs := l_offs + to_number( substr( l_tmp, 5, 2 ), 'XX' );
-dbms_output.put_line( 'offs Name INDEX: ' || l_offs );
-  l_tmp := dbms_lob.substr( p_font, 3, l_offs );
-  l_cnt := to_number( substr( l_tmp, 1, 4 ), 'XXXX' );
-  l_off_sz := to_number( substr( l_tmp, 5, 2 ), 'XX' );
-  l_offs := l_offs + 3;
-  l_data_offs := l_offs + l_off_sz * ( l_cnt + 1 ); -- start data
-  for i in 0 .. l_cnt - 1
-  loop
-    if mod( i, 10 ) = 0
-    then
-      l_idx := 1;
-      l_tmp := dbms_lob.substr( p_font, 11 * l_off_sz, l_offs );
---dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-    end if;
-dbms_output.put_line( utl_raw.cast_to_varchar2( dbms_lob.substr( p_font
-, to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-- to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' )
-, l_data_offs
-) ) );
-    l_offs := l_offs + l_off_sz;
-    l_data_offs := l_data_offs
-            + to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-            - to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' );
-    l_idx := l_idx + 2 * l_off_sz;
-  end loop;
-  -- Top DICT INDEX
-  l_offs := l_data_offs;
-dbms_output.put_line( 'offs Top DICT INDEX: ' || l_offs );
-  l_tmp := dbms_lob.substr( p_font, 3, l_offs );
-  l_cnt := to_number( substr( l_tmp, 1, 4 ), 'XXXX' );
-  l_off_sz := to_number( substr( l_tmp, 5, 2 ), 'XX' );
-  l_offs := l_offs + 3;
-  l_data_offs := l_offs + l_off_sz * ( l_cnt + 1 ); -- start data
-  for i in 0 .. l_cnt - 1
-  loop
-    if mod( i, 10 ) = 0
-    then
-      l_idx := 1;
-      l_tmp := dbms_lob.substr( p_font, 11 * l_off_sz, l_offs );
-    end if;
-dbms_output.put_line( to_char( i, '999' ) || ' ' ||
-to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' ) || ' ' ||
-to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' ) );
-    l_cff_buf := dbms_lob.substr( p_font
-                                , to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-                                - to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' )
-                                , l_data_offs
-                                );
-dbms_output.put_line( l_cff_buf );
-    l_pos := 1;
-    loop
-      exit when l_pos > length( l_cff_buf );
-      l_operand := to_number( substr( l_cff_buf, l_pos, 2 ), 'XX' );
-      if l_operand between 32 and 246
-      then
-        l_operand := l_operand - 139;
-      elsif l_operand between 247 and 250
-      then
-        l_operand := ( l_operand - 247 ) * 256 + 108
-                  + to_number( substr( l_cff_buf, l_pos + 2, 2 ), 'XX' );
-        l_pos := l_pos + 2;
-      elsif l_operand between 251 and 254
-      then
-        l_operand := - ( l_operand - 251 ) * 256 - 108
-                  - to_number( substr( l_cff_buf, l_pos + 2, 2 ), 'XX' );
-        l_pos := l_pos + 2;
-      elsif l_operand = 28
-      then
-        l_operand := to_number( substr( l_cff_buf, l_pos + 2, 4 ), 'XXXX' );
-        if l_operand > 32767
+    l_subset  blob;
+    l_fmt     varchar2(16);
+    l_tmp     varchar2(32767);
+    l_buf     varchar2(32767);
+    l_header  varchar2(32767);
+    l_sz      pls_integer;
+    l_cnt     pls_integer;
+    l_idx     pls_integer;
+    l_len     pls_integer;
+    l_mod     pls_integer;
+    l_tags    pls_integer;
+    l_loca_s  pls_integer;
+    l_loca_e  pls_integer;
+    l_font    tp_font;
+    l_loca    tp_pls_tab;
+    l_pos     integer;
+    l_offset  integer;
+    --
+  procedure cff( p_cff blob, p_offset integer := 1 )
+    is
+    -- https://adobe-type-tools.github.io/font-tech-notes/pdfs/5176.CFF.pdf
+      l_buf          varchar2(32767);
+      l_name         varchar2(32767);
+      l_offs         integer;
+      l_sz           pls_integer;
+      l_to_do        pls_integer;
+      l_offs_sz      pls_integer;
+      l_name_idx     pls_integer;
+      l_subr_bias    pls_integer;
+      l_gsubr_bias   pls_integer;
+      l_new2old      tp_pls_tab;
+      l_glyph2cid    tp_pls_tab;
+      l_glyph2font   tp_pls_tab;
+      l_used_subrs   tp_pls_tab;
+      l_used_gsubrs  tp_pls_tab;
+      l_used_strings tp_pls_tab;
+      --
+      type tp_dict_entry is record
+        ( operator raw(2)
+        , operand1 integer
+        , operand2 integer
+        , operand3 integer
+        , entry    raw(100)
+        );
+      type tp_dict_entries is table of tp_dict_entry index by varchar2(4);
+      type tp_dict is record
+        ( cnt       pls_integer
+        , offs      integer
+        , data_end  integer
+        , arr_start tp_pls_tab
+        , arr_len   tp_pls_tab
+        );
+      l_names       tp_dict;
+      l_topdict     tp_dict;
+      l_strings     tp_dict;
+      l_gsubrs      tp_dict;
+      l_priv_subrs  tp_dict;
+      l_charstrings tp_dict;
+      l_fd_array    tp_dict;
+      l_top_data    tp_dict_entries;
+      l_font_dict   tp_dict_entries;
+      l_priv_dict   tp_dict_entries;
+      --
+      type tp_operators is table of varchar2(4);
+      l_SID_operators constant tp_operators :=
+        tp_operators( '00'   -- version
+                    , '01'   -- Notice
+                    , '02'   -- FullName
+                    , '03'   -- FamilyName
+                    , '04'   -- Weight
+                    , '0C00' -- Copyright
+                    , '0C15' -- PostScript
+                    , '0C16' -- BaseFontName
+                    , '0C26' -- FD FontName
+                    );
+      --
+      function parse_dict( p_offs integer )
+      return tp_dict
+      is
+        l_dict    tp_dict;
+        l_offs    integer;
+        l_sz      pls_integer;
+        l_cur     pls_integer;
+        l_idx     pls_integer;
+        l_prev    pls_integer;
+        l_to_do   pls_integer;
+        l_offs_sz pls_integer;
+        l_fmt     constant varchar2(8) := 'XXXXXXXX';
+      begin
+        l_buf := dbms_lob.substr( p_cff, 3, p_offs );
+        l_dict.cnt := to_number( substr( l_buf, 1, 4 ), 'XXXX' );
+        if l_dict.cnt = 0
         then
-          l_operand := l_operand - 65536;
+          l_dict.data_end := p_offs + 2;
+          return l_dict;
         end if;
-        l_pos := l_pos + 4;
-      elsif l_operand = 29
-      then
-        l_operand := to_number( substr( l_cff_buf, l_pos + 2, 8 ), 'XXXXXXXX' );
-        if l_operand > 2147483647
-        then
-          l_operand := l_operand - 4294967296;
-        end if;
-        l_pos := l_pos + 8;
-      elsif l_operand = 30
-      then
+        l_offs_sz := g_hex( substr( l_buf, 5, 2 ) );
+        l_to_do := l_dict.cnt;
+        l_offs := p_offs + 3 + l_offs_sz;
+        l_sz := 16000 / l_offs_sz;
+        l_prev := 1;
+        l_dict.arr_start( 1 ) := 1;
+        for i in 0 .. 1000
         loop
-          case substr( l_cff_buf, l_pos + 2, 1 )
-            when 'F' then exit;
-            when 'A' then l_real := l_real || '.';
-            when 'B' then l_real := l_real || 'E';
-            when 'C' then l_real := l_real || 'E-';
-            when 'E' then l_real := '-' || l_real;
-            when 'D' then null;
-            else l_real := l_real || substr( l_cff_buf, l_pos + 2, 1 );
-          end case;
-          l_pos := l_pos + 1;
-          exit when l_pos > length( l_cff_buf );
+          exit when l_to_do < 1;
+          l_buf := dbms_lob.substr( p_cff, least( l_sz, l_to_do ) * l_offs_sz, l_offs );
+          for j in 0 .. length( l_buf ) / ( 2 * l_offs_sz ) - 1
+          loop
+            l_idx := i * l_sz + j + 1;
+            l_cur := to_number( substr( l_buf, 1 + j * 2 * l_offs_sz, 2 * l_offs_sz ), l_fmt );
+            l_dict.arr_start( l_idx + 1 ) := l_cur;
+            l_dict.arr_len( l_idx ) := l_cur - l_prev;
+            l_prev := l_cur;
+          end loop;
+          l_offs := l_offs + l_sz * l_offs_sz;
+          l_to_do := l_to_do - l_sz;
         end loop;
-        if bitand( l_pos, 1 ) = 0
+        l_dict.offs := p_offs + 2 + ( l_dict.cnt + 1 ) * l_offs_sz;
+        l_dict.data_end := l_dict.offs + l_dict.arr_start( l_dict.cnt + 1 );
+        l_dict.arr_start.delete( l_dict.cnt + 1 );
+        return l_dict;
+      end parse_dict;
+      --
+      function parse_dict_data( p_offs integer, p_len pls_integer )
+      return tp_dict_entries
+      is
+        l_cnt        pls_integer;
+        l_len        pls_integer;
+        l_pos        pls_integer;
+        l_start      pls_integer;
+        l_real       varchar2(100);
+        l_buf        varchar2(32767);
+        l_operand    number;
+        l_entries    tp_dict_entries;
+        l_entry      tp_dict_entry;
+        l_null_entry tp_dict_entry;
+      begin
+        if coalesce( p_len, 0 ) = 0 or coalesce( p_offs, 0 ) = 0
         then
-          l_pos := l_pos + 1;
+          return l_entries;
         end if;
-      elsif l_operand = 12
+        l_buf := dbms_lob.substr( p_cff, p_len, p_offs );
+        l_cnt := 0;
+        l_pos := 1;
+        l_start := l_pos;
+        l_len := length( l_buf );
+        loop
+          exit when l_pos > l_len;
+          l_operand := g_hex( substr( l_buf, l_pos, 2 ) );
+          exit when l_operand is null;
+          if l_operand between 32 and 246
+          then
+            l_operand := l_operand - 139;
+          elsif l_operand between 247 and 250
+          then
+            l_operand := ( l_operand - 247 ) * 256 + 108 + g_hex( substr( l_buf, l_pos + 2, 2 ) );
+            l_pos := l_pos + 2;
+          elsif l_operand between 251 and 254
+          then
+            l_operand := - ( l_operand - 251 ) * 256 - 108 - g_hex( substr( l_buf, l_pos + 2, 2 ) );
+            l_pos := l_pos + 2;
+          elsif l_operand = 28
+          then
+            l_operand := to_number( substr( l_buf, l_pos + 2, 4 ), 'XXXX' );
+            l_pos := l_pos + 4;
+            if l_operand > 32767
+            then
+              l_operand := l_operand - 65536;
+            end if;
+          elsif l_operand = 29
+          then
+            l_operand := to_number( substr( l_buf, l_pos + 2, 8 ), 'XXXXXXXX' );
+            l_pos := l_pos + 8;
+            if l_operand > 2147483647
+            then
+              l_operand := l_operand - 4294967296;
+            end if;
+          elsif l_operand = 30
+          then
+            l_real := null;
+            loop
+              case substr( l_buf, l_pos + 2, 1 )
+                when 'F' then exit;
+                when 'A' then l_real := l_real || '.';
+                when 'B' then l_real := l_real || 'E';
+                when 'C' then l_real := l_real || 'E-';
+                when 'E' then l_real := '-' || l_real;
+                when 'D' then null;
+                else l_real := l_real || substr( l_buf, l_pos + 2, 1 );
+              end case;
+              l_pos := l_pos + 1;
+              exit when l_pos > l_len;
+            end loop;
+            if bitand( l_pos, 1 ) = 0
+            then
+              l_pos := l_pos + 1;
+            end if;
+            declare
+              l_mantisse number;
+              l_mant     varchar2(100);
+              l_pos_e    constant pls_integer := instr( l_real, 'E' );
+            begin
+              if l_pos_e > 0
+              then
+                l_mant := substr( l_real, 1, l_pos_e - 1 );
+                l_mantisse := to_number( l_mant, translate( l_mant, '012345678-', '999999999' ), 'NLS_NUMERIC_CHARACTERS=''.,''' );
+                if abs( l_mantisse ) >= 10
+                then
+                  l_operand := l_mantisse * power( 10, to_number( substr( l_real, l_pos_e + 1 ) ) );
+                else
+                  l_operand := to_number( l_real, translate( substr( l_real, 1, l_pos_e - 1 ), '012345678-', '999999999' ) || 'EEEE', 'NLS_NUMERIC_CHARACTERS=''.,''' );
+                end if;
+              else
+                l_operand := to_number( l_real, translate( l_real, '012345678-', '999999999' ), 'NLS_NUMERIC_CHARACTERS=''.,''' );
+              end if;
+            exception
+              when value_error then
+                l_operand := 0;
+            end;
+          else
+            if l_operand = 12
+            then
+              l_pos := l_pos + 2;
+              l_entry.operator := hextoraw( '0C' || substr( l_buf, l_pos, 2 ) );
+            else
+              l_entry.operator := hextoraw( substr( l_buf, l_pos, 2 ) );
+            end if;
+            l_cnt := 0;
+            l_operand := null;
+            l_entry.entry := hextoraw( substr( l_buf, l_start, l_pos + 2 - l_start ) );
+            l_entries( rawtohex( l_entry.operator ) ) := l_entry;
+            l_start := l_pos + 2;
+            l_entry := l_null_entry;
+          end if;
+          l_pos := l_pos + 2;
+          if l_operand is not null
+          then
+            l_cnt := l_cnt + 1;
+            case l_cnt
+              when 1 then l_entry.operand1 := l_operand;
+              when 2 then l_entry.operand2 := l_operand;
+              when 3 then l_entry.operand3 := l_operand;
+              else null;
+            end case;
+          end if;
+        end loop;
+        return l_entries;
+      end parse_dict_data;
+      --
+      procedure parse_type2( p_offs integer, p_len pls_integer )
+      is
+        l_sz       constant pls_integer := 16000;
+        l_lastn    number;
+        l_stems    pls_integer := 0;
+        l_stack_sz pls_integer := 0;
+        --
+        procedure parse_type2_int( p_offs integer, p_len pls_integer )
+        is
+          l_offs  integer;
+          l_op    number;
+          l_dummy number;
+          l_idx   pls_integer;
+          l_len   pls_integer;
+          l_pos   pls_integer;
+          l_buf   varchar2(32767);
+          --
+          function get_byte
+          return pls_integer
+          is
+            l_x   pls_integer;
+            l_tmp pls_integer;
+            l_hex varchar2(2);
+          begin
+            l_hex := substr( l_buf, l_pos, 2 );
+            if l_hex is null
+            then
+              l_tmp := least( l_sz, l_len );
+              if l_tmp < 1
+              then
+                return to_number( null );
+              end if;
+              l_buf := dbms_lob.substr( p_cff, l_tmp, l_offs );
+              l_len := l_len - l_tmp;
+              l_offs := l_offs + l_tmp;
+              l_pos := 1;
+              l_hex := substr( l_buf, 1, 2 );
+            end if;
+            l_x := g_hex( l_hex );
+            l_pos := l_pos + 2;
+            return l_x;
+          end get_byte;
+          --
+        begin
+          l_pos := 1;
+          l_len := p_len;
+          l_offs := p_offs;
+          loop
+            l_op := get_byte;
+            exit when l_op is null;
+            if l_op between 32 and 255 or l_op = 28
+            then
+              if l_op between 32 and 246
+              then
+                l_op := l_op - 139;
+              elsif l_op between 247 and 250
+              then
+                l_op := ( l_op - 247 ) * 256 + 108 + get_byte;
+                exit when l_op is null;
+              elsif l_op between 251 and 254
+              then
+                l_op := - ( l_op - 251 ) * 256 - 108 - get_byte;
+                exit when l_op is null;
+              elsif l_op = 28
+              then
+                l_op := get_byte * 256 + get_byte;
+                exit when l_op is null;
+                if l_op > 32767
+                then
+                  l_op := l_op - 65536;
+                end if;
+              elsif l_op = 255
+              then
+                l_op := ( get_byte * 256 + get_byte ) * 256 + get_byte;
+                l_op := l_op * 256 + get_byte;
+                exit when l_op is null;
+                if l_op > 2147483647
+                then
+                  l_op := l_op - 4294967296;
+                end if;
+                l_op := l_op / 65536;
+              end if;
+              l_lastn := l_op;
+              l_stack_sz := l_stack_sz + 1;
+            elsif l_op = 11 -- return
+            then
+              exit;
+            elsif l_op = 14 -- endchar
+            then
+              l_stack_sz := 0;
+              exit;
+            elsif l_op in ( 4  -- vmoveto
+                          , 15 -- vsindex
+                          , 22 -- hmoveto
+                          )
+            then
+              l_lastn := null;
+              l_stack_sz := l_stack_sz - 1;
+            elsif l_op = 21 -- rmoveto
+            then
+              l_lastn := null;
+              l_stack_sz := l_stack_sz - 2;
+            elsif l_op in ( 5  -- rlineto
+                          , 6  -- hlineto
+                          , 7  -- vlineto
+                          , 8  -- rrcurveto
+                          , 16 -- blend
+                          , 24 -- rcurveline
+                          , 25 -- rlinecurve
+                          , 26 -- vvcurveto
+                          , 27 -- hhcurveto
+                          , 30 -- vhcurveto
+                          , 31 -- hvcurveto
+                          )
+            then
+              l_lastn := null;
+              l_stack_sz := 0;
+            elsif l_op in ( 1  -- hstem
+                          , 3  -- vstem
+                          , 18 -- hstemhm
+                          , 23 -- vstemhm
+                          )
+            then
+              l_stems := l_stems + trunc( l_stack_sz / 2 );
+              l_lastn := null;
+              l_stack_sz := 0;
+            elsif l_op in ( 19 -- hintmask
+                          , 20 -- cntrmask
+                          )
+            then
+              l_stems := l_stems + trunc( l_stack_sz / 2 );
+              l_lastn := null;
+              l_stack_sz := 0;
+              for s in 1 .. trunc( ( l_stems + 7 ) / 8 )
+              loop
+                l_dummy := get_byte;
+              end loop;
+            elsif l_op = 10 -- callsubr
+            then
+              l_stack_sz := l_stack_sz - 1;
+              l_idx := l_subr_bias + l_lastn + 1;
+              l_lastn := null;
+              parse_type2_int( l_priv_subrs.offs + l_priv_subrs.arr_start( l_idx ), l_priv_subrs.arr_len( l_idx ) );
+              l_used_subrs( l_idx ) := 0;
+            elsif l_op = 29 -- callgsubr
+            then
+              l_stack_sz := l_stack_sz - 1;
+              l_idx := l_gsubr_bias + l_lastn + 1;
+              l_lastn := null;
+              parse_type2_int( l_gsubrs.offs + l_gsubrs.arr_start( l_idx ), l_gsubrs.arr_len( l_idx ) );
+              l_used_gsubrs( l_idx ) := 0;
+            elsif l_op = 12 -- escape
+            then
+              l_op := get_byte;
+              l_lastn := null;
+              exit when l_op is null;
+              if l_op in ( 3  -- and
+                         , 4  -- or
+                         , 10 -- add
+                         , 11 -- sub
+                         , 12 -- div
+                         , 15 -- eq
+                         , 18 -- drop
+                         , 24 -- mul
+                         )
+              then
+                l_stack_sz := l_stack_sz - 1;
+              elsif l_op in ( 5  -- not
+                            , 9  -- abs
+                            , 14 -- neg
+                            , 21 -- get
+                            , 26 -- sqrt
+                            , 28 -- exch
+                            , 29 -- index
+                            )
+              then
+                null;
+              elsif l_op = 22 -- ifelse
+              then
+                l_stack_sz := l_stack_sz - 3;
+              elsif l_op in ( 20 -- put
+                            , 30 -- roll
+                            )
+              then
+                l_stack_sz := l_stack_sz - 2;
+              elsif l_op = 27 -- dup
+              then
+                l_stack_sz := l_stack_sz + 1;
+              elsif l_op = 34 -- hflex
+              then
+                l_stack_sz := l_stack_sz - 7;
+              elsif l_op = 35 -- flex
+              then
+                l_stack_sz := l_stack_sz - 13;
+              elsif l_op = 36 -- hflex1
+              then
+                l_stack_sz := l_stack_sz - 9;
+              elsif l_op = 37 -- flex1
+              then
+                l_stack_sz := l_stack_sz - 11;
+              else
+                raise_application_error( -20063, 'Unexpected operator ' || to_char( l_op, '0X' ) || ' in CFF font file ' || l_name );
+              end if;
+            else
+              raise_application_error( -20064, 'Unexpected operator ' || to_char( l_op, '0X' ) || ' in CFF font file ' || l_name );
+            end if;
+          end loop;
+        end parse_type2_int;
+        --
+      begin
+        parse_type2_int( p_offs, p_len );
+      end parse_type2;
+      --
+      function get_cff_value( p_dict tp_dict, p_idx pls_integer )
+      return raw
+      is
+      begin
+        return dbms_lob.substr( p_cff, p_dict.arr_len( p_idx ), p_dict.offs + p_dict.arr_start( p_idx ) );
+      end get_cff_value;
+      --
+      function get_cff_string( p_idx pls_integer )
+      return varchar2
+      is
+      begin
+        return utl_raw.cast_to_varchar2( get_cff_value( l_strings, p_idx ) );
+      end get_cff_string;
+      --
+      procedure mark_used_strings( p_dict tp_dict_entries )
+      is
+        procedure mark( p_sid pls_integer, p_operator varchar2 )
+        is
+          l_sid pls_integer := p_sid;
+        begin
+          if l_sid > 389
+          then
+            l_sid := l_sid - 390;
+            l_used_strings( l_sid ) := 0;
+          end if;
+        end;
+      begin
+        for i in l_SID_operators.first .. l_SID_operators.last
+        loop
+          if p_dict.exists( l_SID_operators( i ) )
+          then
+            mark( p_dict( l_SID_operators( i ) ).operand1, l_SID_operators( i ) );
+          end if;
+        end loop;
+        if p_dict.exists( '0C1E' ) -- ROS
+        then
+          mark( p_dict( '0C1E' ).operand1, '0C1E ROS 1' );
+          mark( p_dict( '0C1E' ).operand2, '0C1E ROS 2' );
+        end if;
+      end mark_used_strings;
+      --
+      function needed_length( p_len pls_integer, p_count pls_integer )
+      return pls_integer
+      is
+      begin
+        return case
+                 when p_len <= 254      then p_count + 1
+                 when p_len <= 65534    then 2 * ( p_count + 1 )
+                 when p_len <= 16777214 then 3 * ( p_count + 1 )
+                 else 4 * ( p_count + 1 )
+               end + 3 + p_len;
+      end needed_length;
+      --
+      function needed_length( p_dict tp_dict, p_used tp_pls_tab, p_zero boolean, p_plus pls_integer := 0 )
+      return pls_integer
+      is
+        l_idx pls_integer;
+        l_len pls_integer;
+      begin
+        if p_used.count = 0
+        then
+          return 2;
+        end if;
+        l_len := 0;
+        l_idx := p_used.first;
+        loop
+          exit when l_idx is null;
+          if p_plus > 0
+          then
+            l_len := l_len + p_dict.arr_len( p_used( l_idx ) + 1 );
+          else
+            l_len := l_len + p_dict.arr_len( l_idx );
+          end if;
+          l_idx := p_used.next( l_idx );
+        end loop;
+        if p_zero
+        then -- set length of unused entries to zero
+          l_len := needed_length( l_len, p_dict.cnt );
+        else
+          l_len := needed_length( l_len, p_used.count );
+        end if;
+        return l_len;
+      end needed_length;
+      --
+      procedure copy_dict( p_dict tp_dict, p_used tp_pls_tab, p_zero boolean, p_plus pls_integer := 0 )
+      is
+        l_x     pls_integer;
+        l_sz    pls_integer;
+        l_idx   pls_integer;
+        l_len   pls_integer;
+        l_start pls_integer;
+        l_fmt   varchar2(10);
+        l_buf   varchar2(32767);
+      begin
+        if p_used.count = 0
+        then
+          dbms_lob.writeappend( l_subset, 2, hextoraw( '0000' ) );
+        else
+          l_len := 0;
+          l_idx := p_used.first;
+          loop
+            exit when l_idx is null;
+            if p_plus > 0
+            then
+              l_len := l_len + p_dict.arr_len( p_used( l_idx ) + 1 );
+            else
+              l_len := l_len + p_dict.arr_len( l_idx + p_plus );
+            end if;
+            l_idx := p_used.next( l_idx );
+          end loop;
+          l_sz := case
+                    when l_len <= 254      then 1
+                    when l_len <= 65534    then 2
+                    when l_len <= 16777214 then 3
+                    else 4
+                  end;
+          l_fmt := rpad( 'fm0', 2 + 2 * l_sz, 'X' );
+          if p_zero
+          then -- set length of unused entries to zero
+            l_buf := to_char( p_dict.cnt, 'fm0XXX' );
+          else
+            l_buf := to_char( p_used.count, 'fm0XXX' );
+          end if;
+          l_buf := l_buf || to_char( l_sz, 'fm0X' );
+          l_buf := l_buf || to_char( 1, l_fmt );
+          l_len := 3 + l_sz;
+          l_start := 1;
+          if p_zero
+          then -- set length of unused entries to zero
+            for i in 1 .. p_dict.cnt
+            loop
+              if p_used.exists( i )
+              then
+                l_start := l_start + p_dict.arr_len( i );
+              end if;
+              l_buf := l_buf || to_char( l_start, l_fmt );
+              l_len := l_len + l_sz;
+              if l_len > 16380
+              then
+                dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+                l_len := 0;
+                l_buf := null;
+              end if;
+            end loop;
+            if l_len > 0
+            then
+              dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+              l_len := 0;
+              l_buf := null;
+            end if;
+            for i in 1 .. p_dict.cnt
+            loop
+              if p_used.exists( i )
+              then
+                if l_len + p_dict.arr_len( i ) > 16380
+                then
+                  dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+                  l_len := 0;
+                  l_buf := null;
+                end if;
+                l_len := l_len + p_dict.arr_len( i );
+                l_buf := l_buf || rawtohex( dbms_lob.substr( p_cff, p_dict.arr_len( i ), p_dict.offs + p_dict.arr_start( i ) ) );
+              end if;
+            end loop;
+          else
+            l_idx := p_used.first;
+            loop
+              exit when l_idx is null;
+              if p_plus > 0
+              then
+                l_start := l_start + p_dict.arr_len( p_used( l_idx ) + 1 );
+              else
+                l_start := l_start + p_dict.arr_len( l_idx );
+              end if;
+              l_buf := l_buf || to_char( l_start, l_fmt );
+              l_len := l_len + l_sz;
+              if l_len > 16380
+              then
+                dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+                l_len := 0;
+                l_buf := null;
+              end if;
+              l_idx := p_used.next( l_idx );
+            end loop;
+            if l_len > 0
+            then
+              dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+              l_len := 0;
+              l_buf := null;
+            end if;
+            l_idx := p_used.first;
+            loop
+              exit when l_idx is null;
+              if p_plus > 0
+              then
+                l_x := p_used( l_idx ) + 1;
+              else
+                l_x := l_idx;
+              end if;
+              if l_len + p_dict.arr_len( l_x ) > 16380
+              then
+                dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+                l_len := 0;
+                l_buf := null;
+              end if;
+              l_len := l_len + p_dict.arr_len( l_x );
+              l_buf := l_buf || rawtohex( dbms_lob.substr( p_cff, p_dict.arr_len( l_x ), p_dict.offs + p_dict.arr_start( l_x ) ) );
+              l_idx := p_used.next( l_idx );
+            end loop;
+          end if;
+          if l_len > 0
+          then
+            dbms_lob.writeappend( l_subset, l_len, hextoraw( l_buf ) );
+          end if;
+        end if;
+      end copy_dict;
+      --
+      function get_bias( p_cnt pls_integer )
+      return pls_integer
+      is
+      begin
+        return case
+                 when l_top_data.exists( '0C06' )
+                  and l_top_data( '0C06' ).operand1 = 1 then 0
+                 when p_cnt < 1240                  then 107
+                 when p_cnt < 33900                 then 1131
+                 else 32768
+               end;
+      end get_bias;
+      --
+      procedure cid2subset_cid
+      is
+        l_entry      raw(4);
+        l_tmp        raw(32767);
+        l_buf        varchar2(32767);
+        l_offs       integer;
+        l_len        pls_integer;
+        l_old        pls_integer;
+        l_fd_idx     pls_integer;
+        l_pds_len    pls_integer;
+        l_priv_d_sz  pls_integer;
+        l_new_fd_idx pls_integer;
+        l_used_fds   tp_pls_tab;
+        l_pds_offset tp_pls_tab;
+        l_all_used   tp_matrix;
+      begin
+        l_fd_array := parse_dict( p_offset + l_top_data( '0C24' ).operand1 );
+        l_offs := p_offset + l_top_data( '0C25' ).operand1;
+        l_buf := dbms_lob.substr( p_cff, 3, l_offs );
+        if substr( l_buf, 1, 2 ) = '00'
+        then
+          l_sz := 16000;
+          l_offs := l_offs + 1;
+          l_to_do := l_charstrings.cnt;
+          for i in 0 .. 10
+          loop
+            exit when l_to_do < 1;
+            l_buf := dbms_lob.substr( p_cff, least( l_to_do, l_sz ), l_offs );
+            for j in 1 .. least( l_to_do, l_sz )
+            loop
+              l_glyph2font( j - 1 + i * l_sz ) := g_hex( substr( l_buf, 2 * j - 1, 2 ) );
+            end loop;
+            l_offs := l_offs + l_sz;
+            l_to_do := l_to_do - l_sz;
+          end loop;
+        elsif substr( l_buf, 1, 2 ) = '03'
+        then
+          l_sz := 5400;
+          l_offs := l_offs + 3;
+          l_to_do := to_number( substr( l_buf, 3 ), 'XXXX' );
+          declare
+            l_fd    pls_integer;
+            l_last  pls_integer;
+            l_first pls_integer;
+          begin
+            for i in 0 .. 100
+            loop
+              exit when l_to_do < 1;
+              l_buf := dbms_lob.substr( p_cff, 3 * least( l_to_do, l_sz ), l_offs );
+              for j in 0 .. least( l_to_do, l_sz ) - 1
+              loop
+                l_last := to_number( substr( l_buf, 1 + j * 6, 4 ), 'XXXX' );
+                for g in coalesce( l_first, l_last ) .. l_last - 1
+                loop
+                  l_glyph2font( g ) := l_fd;
+                end loop;
+                l_first := l_last;
+                l_fd    := g_hex( substr( l_buf, 5 + j * 6, 2 ) );
+              end loop;
+              l_offs := l_offs + 3 * l_sz;
+              l_to_do := l_to_do - l_sz;
+            end loop;
+            for g in coalesce( l_first, l_charstrings.cnt ) .. l_charstrings.cnt - 1
+            loop
+              l_glyph2font( g ) := l_fd;
+            end loop;
+          end;
+        else
+          raise_application_error( -20062, 'Unexpected value in CFF font file' || l_name );
+        end if;
+        --
+        l_new2old( 0 ) := 0;
+        for i in 0 .. l_new2old.count - 1
+        loop
+          if not l_used_fds.exists( l_glyph2font( l_new2old( i ) ) )
+          then
+            l_new_fd_idx := l_used_fds.count;
+            l_used_fds( l_glyph2font( l_new2old( i ) ) ) := l_new_fd_idx;
+          end if;
+        end loop;
+        l_pds_len := 0;
+        l_fd_idx := l_used_fds.first;
+        loop
+          exit when l_fd_idx is null;
+          l_font_dict := parse_dict_data( l_fd_array.offs + l_fd_array.arr_start( l_fd_idx + 1 ), l_fd_array.arr_len( l_fd_idx + 1 ) );
+          mark_used_strings( l_font_dict );
+          if l_font_dict.exists( '12' ) and l_font_dict( '12' ).operand1 > 0
+          then
+            l_pds_offset( l_fd_idx ) := l_pds_len;
+            l_pds_len := l_pds_len + l_font_dict( '12' ).operand1;
+            l_priv_dict := parse_dict_data( p_offset + l_font_dict( '12' ).operand2, l_font_dict( '12' ).operand1 );
+            --
+            if l_priv_dict.exists( '13' )
+            then
+              l_priv_subrs := parse_dict( p_offset + l_font_dict( '12' ).operand2 + l_priv_dict( '13' ).operand1 );
+              l_subr_bias := get_bias( l_priv_subrs.cnt );
+              l_pds_len := l_pds_len + 2 - utl_raw.length( l_priv_dict( '13' ).entry );
+            end if;
+          end if;
+          l_used_subrs.delete;
+          for i in 0 .. l_new2old.count - 1
+          loop
+            l_old := l_new2old( i );
+            if l_glyph2font( l_old ) = l_fd_idx
+            then
+              parse_type2( l_charstrings.offs + l_charstrings.arr_start( l_old + 1 ), l_charstrings.arr_len( l_old + 1 ) );
+            end if;
+          end loop;
+          if l_priv_dict.exists( '13' )
+          then
+            l_pds_len := l_pds_len + needed_length( l_priv_subrs, l_used_subrs, true );
+            l_all_used( l_fd_idx ) := l_used_subrs;
+          end if;
+          l_fd_idx := l_used_fds.next( l_fd_idx );
+        end loop;
+        mark_used_strings( l_top_data );
+        --
+        l_tmp := l_top_data( '0C1E' ).entry;  -- ROS
+        l_entry := l_top_data.first;
+        loop
+          exit when l_entry is null;
+          if l_entry not in ( '0F'   -- charset
+                            , '10'   -- Encoding
+                            , '11'   -- CharStrings
+                            , '0C1E' -- ROS
+                            , '0C24' -- FDArray
+                            , '0C25' -- FDSelect
+                            , '0C22' -- CIDCount
+                            )
+          then
+            l_tmp := utl_raw.concat( l_tmp, l_top_data( l_entry ).entry );
+          end if;
+          l_entry := l_top_data.next( l_entry );
+        end loop;
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_new2old.count, 'fm0XXXXXXX' ) || '0C22' ) ); -- CIDCount
+        l_offs := 4 + needed_length( l_names.arr_len( l_name_idx ), 1 )  -- header + names
+                    + needed_length( utl_raw.length( l_tmp ) + 26, 1 )   -- topdict
+                    + needed_length( l_strings, l_used_strings, true )   -- strings
+                    + needed_length( l_gsubrs, l_used_gsubrs, true );    -- gsubrs
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '0F' ) ); -- charset
+        l_offs := l_offs + 5; -- charset type 2, charstring/numGlyphs <  65536
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '11' ) );   -- CharStrings
+        l_offs := l_offs + needed_length( l_charstrings, l_new2old, false, 1 );                          -- CharStrings
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '0C25' ) ); -- FDSelect
+        l_offs := l_offs + 1 + l_new2old.count;                                                          -- FDSelect type 0
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs + l_pds_len, 'fm0XXXXXXX' ) || '0C24' ) ); -- FDArray
+        l_len := utl_raw.length( l_tmp );
+        if l_len > 254
+        then
+          dbms_lob.writeappend( l_subset
+                              , l_len + 7
+                              , utl_raw.concat( hextoraw( '0001020001' )
+                                              , hextoraw( to_char( l_len + 1, 'fm0XXX' ) )
+                                              , l_tmp
+                                              )
+                              );
+        else
+          dbms_lob.writeappend( l_subset
+                              , l_len + 5
+                              , utl_raw.concat( hextoraw( '00010101' )
+                                              , hextoraw( to_char( l_len + 1, 'fm0X' ) )
+                                              , l_tmp
+                                              )
+                              );
+        end if;
+        copy_dict( l_strings, l_used_strings, true );
+        copy_dict( l_gsubrs, l_used_gsubrs, true );
+        if l_new2old.count > 1
+        then
+          dbms_lob.writeappend( l_subset, 5, hextoraw( '020001' || to_char( l_new2old.count - 2, 'fm0XXX' ) ) );
+          copy_dict( l_charstrings, l_new2old, false, 1 );
+        end if;
+        -- FDSelect
+        l_buf := '00';
+        for i in 0 .. l_new2old.count - 1
+        loop
+          l_buf := l_buf || to_char( l_used_fds( l_glyph2font( l_new2old( i ) ) ), 'fm0X' );
+          if length( l_buf ) > 16000
+          then
+            dbms_lob.writeappend( l_subset, 2 * length( l_buf ), hextoraw( l_buf ) );
+            l_buf := null;
+          end if;
+        end loop;
+        if length( l_buf ) > 0
+        then
+          dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+        end if;
+        -- Private Font Dicts
+        l_fd_idx := l_used_fds.first;
+        loop
+          exit when l_fd_idx is null;
+          l_font_dict := parse_dict_data( l_fd_array.offs + l_fd_array.arr_start( l_fd_idx + 1 ), l_fd_array.arr_len( l_fd_idx + 1 ) );
+          if l_font_dict.exists( '12' ) and l_font_dict( '12' ).operand1 > 0
+          then
+            l_priv_dict := parse_dict_data( p_offset + l_font_dict( '12' ).operand2, l_font_dict( '12' ).operand1 );
+            l_len := 0;
+            l_buf := null;
+            l_entry := l_priv_dict.first;
+            loop
+              exit when l_entry is null;
+              if l_entry != '13'
+              then
+                l_len := l_len + utl_raw.length( l_priv_dict( l_entry ).entry );
+                l_buf := l_buf || rawtohex( l_priv_dict( l_entry ).entry );
+              end if;
+              l_entry := l_priv_dict.next( l_entry );
+            end loop;
+            dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+            if l_priv_dict.exists( '13' )
+            then
+              l_buf := to_char( l_len + 2 + 139, 'fm0X' ) || '13';
+              dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+              l_priv_subrs := parse_dict( p_offset + l_font_dict( '12' ).operand2 + l_priv_dict( '13' ).operand1 );
+              copy_dict( l_priv_subrs, l_all_used( l_fd_idx ), true );
+            end if;
+          end if;
+          l_fd_idx := l_used_fds.next( l_fd_idx );
+        end loop;
+        -- FDArray
+        l_len := 1;
+        l_tmp := null;
+        l_buf := to_char( l_used_fds.count, 'fm0XXX' ) || '020001';
+        l_fd_idx := l_used_fds.first;
+        loop
+          exit when l_fd_idx is null;
+          l_font_dict := parse_dict_data( l_fd_array.offs + l_fd_array.arr_start( l_fd_idx + 1 ), l_fd_array.arr_len( l_fd_idx + 1 ) );
+          l_entry := l_font_dict.first;
+          loop
+            exit when l_entry is null;
+            if l_entry != '12'
+            then
+              l_len := l_len + utl_raw.length( l_font_dict( l_entry ).entry );
+              l_tmp := utl_raw.concat( l_tmp, l_font_dict( l_entry ).entry );
+            end if;
+            l_entry := l_font_dict.next( l_entry );
+          end loop;
+          if l_font_dict.exists( '12' ) and l_font_dict( '12' ).operand1 > 0
+          then
+            l_priv_d_sz := l_font_dict( '12' ).operand1;
+            l_priv_dict := parse_dict_data( p_offset + l_font_dict( '12' ).operand2, l_font_dict( '12' ).operand1 );
+            if l_priv_dict.exists( '13' )
+            then
+              l_priv_d_sz := l_priv_d_sz - utl_raw.length( l_priv_dict( '13' ).entry ) + 2;
+            end if;
+            l_len := l_len + 7;
+            l_tmp := utl_raw.concat( l_tmp, hextoraw( to_char( l_priv_d_sz + 139, 'fm0X' ) || '1D' || to_char( l_offs + l_pds_offset( l_fd_idx ), 'fm0XXXXXXX' ) || '12' ) );
+          end if;
+          l_buf := l_buf || to_char( l_len, 'fm0XXX' );
+          l_fd_idx := l_used_fds.next( l_fd_idx );
+        end loop;
+        dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+        dbms_lob.writeappend( l_subset, utl_raw.length( l_tmp ), l_tmp );
+      end cid2subset_cid;
+      --
+      procedure nocid2subset_cid
+      is
+        l_entry   raw(4);
+        l_fmt     varchar2(10);
+        l_cur     pls_integer;
+        l_new     pls_integer;
+        l_old     pls_integer;
+        l_sid     pls_integer;
+        l_str_len pls_integer;
+      begin
+        if l_top_data.exists( '12' ) and l_top_data( '12' ).operand1 > 0
+        then
+          l_priv_dict := parse_dict_data( p_offset + l_top_data( '12' ).operand2, l_top_data( '12' ).operand1 );
+          if l_priv_dict.exists( '13' )
+          then
+            l_priv_subrs := parse_dict( p_offset + l_top_data( '12' ).operand2 + l_priv_dict( '13' ).operand1 );
+            l_subr_bias := get_bias( l_priv_subrs.cnt );
+          end if;
+        end if;
+        --
+        l_new2old( 0 ) := 0;
+        for i in 0 .. l_new2old.count - 1
+        loop
+          l_old := l_new2old( i ) + 1;
+          parse_type2( l_charstrings.offs + l_charstrings.arr_start( l_old ), l_charstrings.arr_len( l_old ) );
+        end loop;
+        --
+        l_tmp := hextoraw( 'F81BF81C8B0C1E' ); -- ROS Adobe Identity 0
+        l_str_len := 13;
+        l_entry := l_top_data.first;
+        loop
+          exit when l_entry is null;
+          if l_entry not in ( '0F'   -- charset
+                            , '10'   -- Encoding
+                            , '11'   -- CharStrings
+                            , '0C1E' -- ROS
+                            , '0C24' -- FDArray
+                            , '0C25' -- FDSelect
+                            , '0C22' -- CIDCount
+                            )
+          then
+            if l_entry member of l_SID_operators and l_top_data( l_entry ).operand1 > 389
+            then
+              l_sid := l_top_data( l_entry ).operand1 - 390;
+              l_str_len := l_str_len + l_strings.arr_len( l_sid );
+              l_new := l_used_strings.count + 1;
+              l_used_strings( l_new ) := l_sid;
+              l_tmp := utl_raw.concat( l_tmp, hextoraw( 'F8' || to_char( l_new + 28, 'fm0X' ) ), l_entry );
+            else
+              l_tmp := utl_raw.concat( l_tmp, l_top_data( l_entry ).entry );
+            end if;
+          end if;
+          l_entry := l_top_data.next( l_entry );
+        end loop;
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_new2old.count, 'fm0XXXXXXX' ) || '0C22' ) ); -- CIDCount
+        l_offs := 4 + needed_length( l_names.arr_len( l_name_idx ), 1 )    -- header + names
+                    + needed_length( utl_raw.length( l_tmp ) + 26, 1 )     -- topdict
+                    + needed_length( l_str_len, l_used_strings.count + 2 ) -- strings
+                    + needed_length( l_gsubrs, l_used_gsubrs, true );      -- gsubrs
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '0F' ) );   -- charset
+        l_offs := l_offs + 5; -- charset type 2, charstring/numGlyphs <  65536
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '11' ) );   -- CharStrings
+        l_offs := l_offs + needed_length( l_charstrings, l_new2old, false, 1 );                          -- CharStrings
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '0C25' ) ); -- FDSelect
+        l_offs := l_offs + 1 + l_new2old.count;                                                          -- FDSelect type 0
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( l_offs, 'fm0XXXXXXX' ) || '0C24' ) ); -- FDArray
+        l_len := utl_raw.length( l_tmp );
+        if l_len > 254
+        then
+          dbms_lob.writeappend( l_subset
+                              , l_len + 7
+                              , utl_raw.concat( hextoraw( '0001020001' )
+                                              , hextoraw( to_char( l_len + 1, 'fm0XXX' ) )
+                                              , l_tmp
+                                              )
+                              );
+        else
+          dbms_lob.writeappend( l_subset
+                              , l_len + 5
+                              , utl_raw.concat( hextoraw( '00010101' )
+                                              , hextoraw( to_char( l_len + 1, 'fm0X' ) )
+                                              , l_tmp
+                                              )
+                              );
+        end if;
+        l_tmp := utl_raw.cast_to_raw( 'AdobeRegistry' );
+        l_buf := to_char( l_used_strings.count + 2, 'fm0XXX' );
+        if l_str_len > 254
+        then
+          l_fmt := 'fm0XXX';
+          l_buf := l_buf || '02';
+        else
+          l_fmt := 'fm0X';
+          l_buf := l_buf || '01';
+        end if;
+        l_buf := l_buf || to_char( 1, l_fmt ) || to_char( 6, l_fmt ) || to_char( 14, l_fmt );
+        l_cur := 14;
+        for i in 1 .. l_used_strings.count
+        loop
+          l_cur := l_cur + l_strings.arr_len( l_used_strings( i ) );
+          l_buf := l_buf || to_char( l_cur, l_fmt );
+          l_tmp := utl_raw.concat( l_tmp, get_cff_value( l_strings, l_used_strings( i ) ) );
+        end loop;
+        dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+        dbms_lob.writeappend( l_subset, l_str_len, l_tmp );
+        copy_dict( l_gsubrs, l_used_gsubrs, true );
+        if l_new2old.count > 1
+        then
+          dbms_lob.writeappend( l_subset, 5, hextoraw( '020001' || to_char( l_new2old.count - 2, 'fm0XXX' ) ) );
+          copy_dict( l_charstrings, l_new2old, false, 1 );
+        end if;
+        -- FDSelect
+        l_buf := '00';
+        for i in 0 .. l_new2old.count - 1
+        loop
+          l_buf := l_buf || '00';
+          if length( l_buf ) > 16000
+          then
+            dbms_lob.writeappend( l_subset, 2 * length( l_buf ), hextoraw( l_buf ) );
+            l_buf := null;
+          end if;
+        end loop;
+        if length( l_buf ) > 0
+        then
+          dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+        end if;
+        -- FDArray
+        l_tmp := null;
+        l_entry := l_priv_dict.first;
+        loop
+          exit when l_entry is null;
+          if l_entry != '13' -- Subrs
+          then
+            l_tmp := utl_raw.concat( l_tmp, l_priv_dict( l_entry ).entry );
+          end if;
+          l_entry := l_priv_dict.next( l_entry );
+        end loop;
+        l_tmp := utl_raw.concat( l_tmp, hextoraw( '1D' || to_char( utl_raw.length( l_tmp ) + 6, 'fm0XXXXXXX' ) || '13' ) ); -- Subrs
+        l_buf := '000101010C' ||
+                 '1D' || to_char( utl_raw.length( l_tmp ), 'fm0XXXXXXX' ) ||
+                 '1D' || to_char( l_offs + 16, 'fm0XXXXXXX' ) || '12';
+        dbms_lob.writeappend( l_subset, 0.5 * length( l_buf ), hextoraw( l_buf ) );
+        dbms_lob.writeappend( l_subset, utl_raw.length( l_tmp ), l_tmp );
+        copy_dict( l_priv_subrs, l_used_subrs, true );
+      end nocid2subset_cid;
+    begin
+      l_buf := dbms_lob.substr( p_cff, 4, p_offset );
+      if substr( l_buf, 1, 2 ) != '01'
       then
-dbms_output.put_line( 'operator: ' || substr( l_cff_buf, l_pos, 4 ) || ' ' || l_operands.count || ': ' || l_operands( 0 ) || case when l_operands.count > 1 then ' ' || l_operands( 1 ) end );
-        l_pos := l_pos + 2;
-        l_operands.delete;
-        l_operand := null;
+        raise_application_error( -20064, 'unsupported CFF version ' || substr( l_buf, 1, 4 ) || ' in CFF font file ' || l_font.fontname );
+      end if;
+      for i in reverse g_pdf.font_old_new( p_index ).first .. - 1
+      loop
+        l_new2old( - i ) := g_pdf.font_old_new( p_index )( i );
+      end loop;
+      l_offs_sz := g_hex( substr( l_buf, 7, 2 ) );
+      l_names := parse_dict( p_offset + g_hex( substr( l_buf, 5, 2 ) ) );
+      l_topdict := parse_dict( l_names.data_end );
+      l_strings := parse_dict( l_topdict.data_end );
+      l_gsubrs := parse_dict( l_strings.data_end );
+      --
+      l_gsubr_bias := get_bias( l_gsubrs.cnt );
+      for i in 1 .. l_topdict.cnt
+      loop
+        l_top_data := parse_dict_data( l_topdict.offs + l_topdict.arr_start( i ), l_topdict.arr_len( i ) );
+        l_name := utl_raw.cast_to_varchar2( dbms_lob.substr( p_cff, l_names.arr_len( i ), l_names.offs + l_names.arr_start( i ) ) );
+        l_name_idx := i;
+        exit;
+      end loop;
+      --
+      l_charstrings := parse_dict( p_offset + l_top_data( '11' ).operand1 );
+      -- 0 ISOAdobe
+      -- 1 Expert
+      -- 2 ExpertSubset
+      if l_top_data.exists( '0F' ) and l_top_data( '0F' ).operand1 > 2
+      then
+        declare
+          l_cid  pls_integer;
+          l_gid  pls_integer;
+        begin
+          l_offs := p_offset + l_top_data( '0F' ).operand1 + 1;
+          l_to_do := l_charstrings.cnt;
+          case dbms_lob.substr( p_cff, 1, l_offs - 1 )
+            when '00'
+            then
+              l_sz := 8000;
+              for i in 0 .. 100
+              loop
+                exit when l_to_do < 1;
+                l_buf := dbms_lob.substr( p_cff, 2 * least( l_to_do, l_sz ), l_offs );
+                for j in 0 .. least( l_to_do, l_sz ) - 2
+                loop
+                  l_glyph2cid( j + 1 + i * l_sz ) := to_number( substr( l_buf, 1 + 4 * j, 4 ), 'XXXX' );
+                end loop;
+                l_offs := l_offs + l_sz;
+                l_to_do := l_to_do - l_sz;
+              end loop;
+            when '01'
+            then
+              l_gid := 1;
+              l_sz := 5400;
+              <<charset_loop_01>>
+              for i in 0 .. 100
+              loop
+                exit when l_gid >= l_to_do;
+                l_buf := dbms_lob.substr( p_cff, 3 * l_sz, l_offs );
+                for j in 0 .. l_sz - 1
+                loop
+                  l_cid := to_number( substr( l_buf, 1 + 6 * j, 4 ), 'XXXX' );
+                  for g in 0 .. g_hex( substr( l_buf, 5 + 6 * j, 2 ) )
+                  loop
+                    l_glyph2cid( l_gid ) := l_cid + g;
+                    l_gid := l_gid + 1;
+                  end loop;
+                  exit charset_loop_01 when l_gid >= l_to_do;
+                end loop;
+                l_offs := l_offs + l_sz;
+              end loop;
+            when '02'
+            then
+              l_gid := 1;
+              l_sz := 4050;
+              <<charset_loop_02>>
+              for i in 0 .. 100
+              loop
+                exit when l_gid >= l_to_do;
+                l_buf := dbms_lob.substr( p_cff, 4 * l_sz, l_offs );
+                for j in 0 .. l_sz - 1
+                loop
+                  l_cid := to_number( substr( l_buf, 1 + 8 * j, 4 ), 'XXXX' );
+                  for g in 0 .. to_number( substr( l_buf, 5 + 8 * j, 4 ), 'XXXX' )
+                  loop
+                    l_glyph2cid( l_gid ) := l_cid + g;
+                    l_gid := l_gid + 1;
+                  end loop;
+                  exit charset_loop_02 when l_gid >= l_to_do;
+                end loop;
+                l_offs := l_offs + l_sz;
+              end loop;
+          end case;
+        end;
+      end if;
+      --
+      l_len := l_names.arr_len( l_name_idx );
+      if l_len > 254
+      then
+        l_subset := utl_raw.concat( hextoraw( '01000404' )
+                                  , hextoraw( '0001020001' )
+                                  , hextoraw( to_char( l_len + 1, 'fm0XXX' ) )
+                                  , utl_raw.cast_to_raw( l_name )
+                                  );
       else
-dbms_output.put_line( 'operator: ' || substr( l_cff_buf, l_pos, 2 ) || ' ' || l_operands.count || ': ' || l_operands( 0 ) || case when l_operands.count > 1 then ' ' || l_operands( 1 ) end );
-        case substr( l_cff_buf, l_pos, 2 )
-          when '0F' then l_char_set_offs := l_operands( 0 );
-          when '10' then l_encoding_offs := l_operands( 0 );
-          when '11' then l_char_strings_offs := l_operands( 0 );
-          when '12' then
-                      l_private_dict_cnt  := l_operands( 0 );
-                      l_private_dict_offs := l_operands( 1 );
-          else null;
-        end case;
-        l_operands.delete;
-        l_operand := null;
+        l_subset := utl_raw.concat( hextoraw( '01000404' )
+                                  , hextoraw( '00010101' )
+                                  , hextoraw( to_char( l_len + 1, 'fm0X' ) )
+                                  , utl_raw.cast_to_raw( l_name )
+                                  );
       end if;
-      l_pos := l_pos + 2;
-      if l_operand is not null
+      if l_top_data.exists( '0C1E' )
       then
-        l_operands( l_operands.count ) := l_operand;
+        cid2subset_cid;
+      else
+        nocid2subset_cid;
       end if;
-    end loop;
-dbms_output.put_line( 'DICT offsets: ' || l_encoding_offs || ':' || l_char_set_offs || ':' || l_char_strings_offs || ':' || l_private_dict_offs );
-    l_offs := l_offs + l_off_sz;
-    l_data_offs := l_data_offs
-            + to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-            - to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' );
-    l_idx := l_idx + 2 * l_off_sz;
-  end loop;
-dbms_output.put_line( dbms_lob.substr( p_font, 6, l_data_offs - 3 ) );
-  -- String INDEX
-  l_offs := l_data_offs;
-dbms_output.put_line( 'offs String INDEX: ' || l_offs );
-  l_tmp := dbms_lob.substr( p_font, 3, l_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  l_cnt := to_number( substr( l_tmp, 1, 4 ), 'XXXX' );
-  l_off_sz := to_number( substr( l_tmp, 5, 2 ), 'XX' );
-  l_offs := l_offs + 3;
-  l_data_offs := l_offs + l_off_sz * ( l_cnt + 1 ); -- start data
-l_tmp := dbms_lob.substr( p_font, 11 * l_off_sz, l_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  for i in 0 .. l_cnt - 1
-  loop
-    if mod( i, 10 ) = 0
-    then
-      l_idx := 1;
-      l_tmp := dbms_lob.substr( p_font, 11 * l_off_sz, l_offs );
---dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-    end if;
-/*
-dbms_output.put_line( to_char( i, '999' ) || ' ' ||
-to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' ) || ' ' ||
-to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' ) || ' ' ||
-utl_raw.cast_to_varchar2( dbms_lob.substr( p_font
-, to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-- to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' )
-, l_data_offs
-) ) );
-*/
-    l_offs := l_offs + l_off_sz;
-    l_data_offs := l_data_offs
-            + to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-            - to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' );
-    l_idx := l_idx + 2 * l_off_sz;
-  end loop;
-  l_offs := l_data_offs;
-dbms_output.put_line( 'offs Global Subr INDEX: ' || l_offs );
-  l_tmp := dbms_lob.substr( p_font, 3, l_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  l_cnt := to_number( substr( l_tmp, 1, 4 ), 'XXXX' );
-  l_off_sz := to_number( substr( l_tmp, 5, 2 ), 'XX' );
-  l_offs := l_offs + 3;
-  l_data_offs := l_offs + l_off_sz * ( l_cnt + 1 ); -- start data
-dbms_output.put_line( 'data: ' || l_data_offs );
-  for i in 0 .. l_cnt - 1
-  loop
-    if mod( i, 10 ) = 0
-    then
-      l_idx := 1;
-      l_tmp := dbms_lob.substr( p_font, 11 * l_off_sz, l_offs );
-    end if;
---dbms_output.put_line( '  ' || i || ' ' || to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' ) );
-    l_offs := l_offs + l_off_sz;
-    l_data_offs := l_data_offs
-            + to_number( substr( l_tmp, l_idx + 2 * l_off_sz, 2 * l_off_sz ), 'XXXXXXXX' )
-            - to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' );
-    l_idx := l_idx + 2 * l_off_sz;
-  end loop;
---dbms_output.put_line( ' => ' || to_number( substr( l_tmp, l_idx, 2 * l_off_sz ), 'XXXXXXXX' ) );
-  -- Encoding
-  l_offs := l_data_offs;
-dbms_output.put_line( 'offs Encodings: ' || l_offs );
-  l_tmp := dbms_lob.substr( p_font, 60, l_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  l_tmp := dbms_lob.substr( p_font, 30, l_char_set_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  l_tmp := dbms_lob.substr( p_font, 30, l_char_strings_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  l_tmp := dbms_lob.substr( p_font, 30, l_private_dict_offs );
-dbms_output.put_line( substr( l_tmp, 1, 100 ) );
-  dbms_lob.createtemporary( l_cff, true );
-            dbms_lob.copy( l_cff
-                         , p_font
-                         , p_len
-                         , 1
-                         , p_offset
-                         );
-  l_len := dbms_lob.getlength( l_cff );
-dbms_output.put_line( l_len ||  ' : ' || p_len );
-          l_header := l_header
-                    || '43464620'                         -- tag
-                    || '00000000'                         -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' )  -- offset
-                    || to_char( l_len   , 'FM0XXXXXXX' ); -- length
-            dbms_lob.copy( l_subset
-                         , l_cff
-                         , dbms_lob.getlength( l_cff )
-                         , l_offset + 1
-                         , 1
-                         );
-  dbms_lob.freetemporary( l_cff );
-end cff; -- 'CFF
+    end cff;
+  --
   begin
     l_font := g_pdf.fonts( p_index );
-    if not l_font.subset or l_font.subtype = 'OpenType'
+    if not l_font.subset
     then
-      return l_font.fontfile2;
+      return g_pdf.font_files( p_index );
     end if;
-    -- xxaa
-    l_font.used_glyphs( 0 ) := coalesce( l_font.notdef, 65535 );
-    l_buf := dbms_lob.substr( l_font.fontfile2, 4096, l_font.ttf_offset );
+    g_pdf.font_glyph_cache( p_index )( 0 ) := l_font.notdef;
+    l_buf := dbms_lob.substr( g_pdf.font_files( p_index ), 4096, l_font.ttf_offset );
     l_cnt := to_number( substr( l_buf, 9, 4 ), 'XXXX' );
     --
+    l_tags := 6; -- head, hhea, hmtx, maxp, glyph, loca
     for i in 0 .. l_cnt - 1
     loop
-      if utl_raw.cast_to_varchar2( substr( l_buf, 25 + i * 32, 8 ) ) = 'loca'
+      if substr( l_buf, 25 + i * 32, 8 ) = c_loca
       then
         l_sz := 4000;
         l_offset := to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1;
@@ -1943,7 +3802,7 @@ end cff; -- 'CFF
           if mod( j, l_sz ) = 0
           then
             l_idx := 0;
-            l_tmp := dbms_lob.substr( l_font.fontfile2
+            l_tmp := dbms_lob.substr( g_pdf.font_files( p_index )
                                     , l_sz * l_font.indexToLocFormat
                                     , l_offset
                                     );
@@ -1952,13 +3811,22 @@ end cff; -- 'CFF
           l_loca( j ) := to_number( substr( l_tmp, 1 + l_idx, 2 * l_font.indexToLocFormat ), 'XXXXXXXX' );
           l_idx := l_idx + 2 * l_font.indexToLocFormat;
         end loop;
-        exit;
+      elsif substr( l_buf, 25 + i * 32, 8 ) in ( c_cvt, c_fpgm, c_prep )
+      then
+        l_tags := l_tags + 1;
       end if;
     end loop;
     --
-    l_offset := 12 + 16 * l_cnt;
+    l_sz := case when l_font.indexToLocFormat = 4 then 1 else 2 end;
+    l_offset := 12 + 16 * l_tags;
     l_subset := utl_raw.copies( '00', l_offset );
-    l_header := substr( l_buf, 1, 24 );
+    if l_tags >= 8
+    then
+      l_header := '00010000' || to_char( l_tags, 'fm0XXX' ) || '00800003' || to_char( ( l_tags - 8 ) * 16, 'fm0XXX' );
+    else
+      l_header := '00010000' || to_char( l_tags, 'fm0XXX' ) || '00400002' || to_char( ( l_tags - 4 ) * 16, 'fm0XXX' );
+    end if;
+    --
     for i in 0 .. l_cnt - 1
     loop
       l_mod := mod( l_offset, 4 );
@@ -1967,175 +3835,95 @@ end cff; -- 'CFF
         dbms_lob.writeappend( l_subset, 4 - l_mod, '000000' );
         l_offset := l_offset + 4 - l_mod;
       end if;
-      case utl_raw.cast_to_varchar2( substr( l_buf, 25 + i * 32, 8 ) )
-        when 'locax'
+      l_len := to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' );
+      if substr( l_buf, 25 + i * 32, 8 ) in ( c_cvt, c_fpgm, c_prep, c_head, c_hhea, c_hmtx, c_maxp )
+      then
+        l_header := l_header
+                  || substr( l_buf, 25 + i * 32, 8 )   -- tag
+                  || substr( l_buf, 33 + i * 32, 8 )   -- checksum
+                  || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
+                  || substr( l_buf, 49 + i * 32, 8 );  -- length
+        if l_len <= 32767
         then
-          l_len := to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' );
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || '00000000'                        -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || substr( l_buf, 49 + i * 32, 8 );  -- length
           dbms_lob.writeappend( l_subset
                               , l_len
-                              , dbms_lob.substr( l_font.fontfile2
+                              , dbms_lob.substr( g_pdf.font_files( p_index )
                                                , l_len
                                                , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
                                                )
                               );
-dbms_output.put_line( l_len );
-dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
-                                               , l_len
-                                               , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
-                                               ) );
-        when 'xCFF '
-        then
-/*
-          l_len := to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' );
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || substr( l_buf, 33 + i * 32, 8 )   -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || substr( l_buf, 49 + i * 32, 8 );  -- length
-            dbms_lob.copy( l_subset
-                         , l_font.fontfile2
-                         , l_len
-                         , l_offset + 1
-                         , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
-                         );
-*/
-          cff( l_font.fontfile2
-             , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
-             , to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' ) );
-        when 'post'
-        then
-          l_len := 32;
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || '00000000'                        -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || to_char( l_len, 'FM0XXXXXXX' );   -- length
-          dbms_lob.writeappend( l_subset
-                              , 32
-                              , utl_raw.concat( hextoraw( '00030000' )
-                                              , dbms_lob.substr( l_font.fontfile2
-                                                               , 28
-                                                               , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 5
-                                                               )
-                                              )
-                              );
-        when 'loca'
-        then
-          l_len := to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' );
-          l_pos := 0;
-          l_tmp := null;
-          for j in 0 .. l_font.numGlyphs - 1
-          loop
-            l_tmp := l_tmp || to_char( l_pos
-                                     , rpad( 'fm0'
-                                           , 2 + 2 * l_font.indexToLocFormat
-                                           , 'X'
-                                           )
-                                     );
+        else
+          dbms_lob.copy( l_subset
+                       , g_pdf.font_files( p_index )
+                       , l_len
+                       , l_offset + 1
+                       , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
+                       );
+        end if;
+        l_offset := l_offset + l_len;
+      elsif substr( l_buf, 25 + i * 32, 8 ) in ( c_CFF, c_CFF2 )
+      then
+        cff( g_pdf.font_files( p_index ), to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1 );
+        return l_subset;
+      elsif substr( l_buf, 25 + i * 32, 8 ) = c_loca
+      then
+        l_fmt := rpad( 'fm0', 2 + 2 * l_font.indexToLocFormat, 'X' );
+        l_pos := 0;
+        l_tmp := null;
+        for j in 0 .. l_font.numGlyphs - 1
+        loop
+          l_tmp := l_tmp || to_char( l_pos, l_fmt );
+          if length( l_tmp ) > 20000
+          then
+            dbms_lob.writeappend( l_subset, length( l_tmp ) / 2, l_tmp );
+            l_tmp := null;
+          end if;
+          if g_pdf.font_glyph_cache( p_index ).exists( j )
+          then
+            l_pos := l_pos + l_loca( j + 1 ) - l_loca( j );
+          end if;
+        end loop;
+        l_tmp := l_tmp || to_char( l_pos, l_fmt );
+        dbms_lob.writeappend( l_subset, length( l_tmp ) / 2, l_tmp );
+        l_header := l_header
+                  || substr( l_buf, 25 + i * 32, 8 )   -- tag
+                  || '00000000'                        -- checksum
+                  || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
+                  || to_char( l_len, 'FM0XXXXXXX' );   -- length
+        l_offset := l_offset + l_len;
+      elsif substr( l_buf, 25 + i * 32, 8 ) = c_glyf
+      then
+        l_len := 0;
+        l_tmp := null;
+        l_idx := g_pdf.font_glyph_cache( p_index ).first;
+        l_pos := to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1;
+        while l_idx is not null
+        loop
+          l_loca_s := l_sz * l_loca( l_idx );
+          l_loca_e := l_sz * l_loca( l_idx + 1 );
+          if l_loca_e > l_loca_s
+          then
+            l_len := l_len + l_loca_e - l_loca_s;
+            l_tmp := l_tmp || dbms_lob.substr( g_pdf.font_files( p_index ), l_loca_e - l_loca_s, l_pos + l_loca_s );
             if length( l_tmp ) > 20000
             then
-              dbms_lob.writeappend( l_subset
-                                  , length( l_tmp ) / 2
-                                  , hextoraw( l_tmp )
-                                  );
+              dbms_lob.writeappend( l_subset, length( l_tmp ) / 2, l_tmp );
               l_tmp := null;
             end if;
-            if l_font.used_glyphs.exists( j )
-            then
-              l_pos := l_pos + l_loca( j + 1 ) - l_loca( j );
-            end if;
-          end loop;
-          l_tmp := l_tmp || to_char( l_pos
-                                   , rpad( 'fm0'
-                                         , 2 + 2 * l_font.indexToLocFormat
-                                         , 'X'
-                                         )
-                                   );
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || '00000000'                        -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || to_char( l_len, 'FM0XXXXXXX' );   -- length
-          dbms_lob.writeappend( l_subset
-                              , length( l_tmp ) / 2
-                              , hextoraw( l_tmp )
-                              );
-        when 'glyf'
+          end if;
+          l_idx := g_pdf.font_glyph_cache( p_index ).next( l_idx );
+        end loop;
+        if l_tmp is not null
         then
-          if l_font.indexToLocFormat = 2
-          then
-            l_sz := 2;
-          else
-            l_sz := 1;
-          end if;
-          l_len := 0;
-          l_tmp := null;
-          l_pos := to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1;
-          for j in 0 .. l_font.numGlyphs - 1
-          loop
-            if     l_font.used_glyphs.exists( j )
-               and l_loca( j + 1 ) > l_loca( j )
-            then
-              l_len := l_len + l_sz * ( l_loca( j + 1 ) - l_loca( j ) );
-              l_tmp := l_tmp
-                    || dbms_lob.substr( l_font.fontfile2
-                                      , l_sz * ( l_loca( j + 1 ) - l_loca( j ) )
-                                      , l_pos
-                                      );
-              if length( l_tmp ) > 20000
-              then
-                dbms_lob.writeappend( l_subset
-                                    , length( l_tmp ) / 2
-                                    , hextoraw( l_tmp )
-                                    );
-                l_tmp := null;
-              end if;
-            end if;
-            l_pos := l_pos + l_sz * ( l_loca( j + 1 ) - l_loca( j ) );
-          end loop;
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || '00000000'                        -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || to_char( l_len, 'FM0XXXXXXX' );   -- length
-          if l_tmp is not null
-          then
-            dbms_lob.writeappend( l_subset
-                                , length( l_tmp ) / 2
-                                , hextoraw( l_tmp )
-                                );
-          end if;
-        else
-          l_len := to_number( substr( l_buf, 49 + i * 32, 8 ), 'XXXXXXXX' );
-          l_header := l_header
-                    || substr( l_buf, 25 + i * 32, 8 )   -- tag
-                    || substr( l_buf, 33 + i * 32, 8 )   -- checksum
-                    || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
-                    || substr( l_buf, 49 + i * 32, 8 );  -- length
-          if l_len <= 32767
-          then
-            dbms_lob.writeappend( l_subset
-                                , l_len
-                                , dbms_lob.substr( l_font.fontfile2
-                                                 , l_len
-                                                 , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
-                                                 )
-                                );
-          else
-            dbms_lob.copy( l_subset
-                         , l_font.fontfile2
-                         , l_len
-                         , l_offset + 1
-                         , to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1
-                         );
-          end if;
-      end case;
-      l_offset := l_offset + l_len;
+          dbms_lob.writeappend( l_subset, length( l_tmp ) / 2, l_tmp );
+        end if;
+        l_header := l_header
+                  || substr( l_buf, 25 + i * 32, 8 )   -- tag
+                  || '00000000'                        -- checksum
+                  || to_char( l_offset, 'FM0XXXXXXX' ) -- offset
+                  || to_char( l_len, 'FM0XXXXXXX' );   -- length
+        l_offset := l_offset + l_len;
+      end if;
     end loop;
     dbms_lob.copy( l_subset
                  , hextoraw( l_header )
@@ -2143,11 +3931,105 @@ dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
                  , 1
                  , 1
                  );
---dbms_output.put_line( l_font.fontname || ': ' || dbms_lob.getlength( l_font.fontfile2 ) || ' ' || dbms_lob.getlength( l_subset ) );
     --
---load_font( l_subset, false );
     return l_subset;
+    --
   end subset_font;
+  --
+  procedure handle_composite_glyphs( p_index pls_integer )
+  is
+    l_buf             varchar2(32767);
+    l_tmp             varchar2(32767);
+    l_sz              pls_integer;
+    l_idx             pls_integer;
+    l_used            pls_integer;
+    l_offset          integer;
+    l_glyf_offset     integer;
+    l_font            tp_font;
+    l_loca            tp_pls_tab;
+    l_used_glyphs     tp_pls_tab;
+    l_used_composites tp_pls_tab;
+    --
+    procedure check_composite( p_glyf pls_integer )
+    is
+      l_pos   pls_integer;
+      l_flags pls_integer;
+      l_comp  pls_integer;
+    begin
+      if     bitand( g_hex( dbms_lob.substr( g_pdf.font_files( p_index ), 1, l_glyf_offset + l_sz * l_loca( p_glyf ) ) ), 128 ) > 0
+         and l_loca( p_glyf + 1 ) > l_loca( p_glyf )
+      then
+        l_buf := dbms_lob.substr( g_pdf.font_files( p_index ), l_sz * ( l_loca( p_glyf + 1 ) - l_loca( p_glyf ) ), l_glyf_offset + l_sz * l_loca( p_glyf ) );
+        l_pos := 23;
+        loop
+          if substr( l_buf, l_pos, 2 ) is null
+          then
+             raise_application_error( -20060, 'Unexpected value in font file ' || l_font.fontname );
+          end if;
+          l_flags := g_hex( substr( l_buf, l_pos, 2 ) );
+          l_comp := to_number( substr( l_buf, l_pos + 2, 4 ), 'XXXX' );
+          if l_comp is null
+          then
+             raise_application_error( -20061, 'Unexpected value in font file ' || l_font.fontname );
+          end if;
+          if not l_used_composites.exists( l_comp )
+          then
+            l_used_composites( l_comp ) := l_font.notdef;  -- notdef??? glyph2code????
+            check_composite( l_comp );
+          end if;
+          exit when bitand( l_flags, 32 ) = 0;
+          l_pos := l_pos + 12
+            + case when bitand( l_flags, 1   ) = 0 then 0 else 4 end   -- ARG_1_AND_2_ARE_WORDS
+            + case when bitand( l_flags, 8   ) = 0 then 0 else 4 end   -- WE_HAVE_A_SCALE
+            + case when bitand( l_flags, 64  ) = 0 then 0 else 8 end   -- WE_HAVE_AN_X_AND_Y_SCALE
+            + case when bitand( l_flags, 128 ) = 0 then 0 else 16 end; -- WE_HAVE_A_TWO_BY_TWO
+        end loop;
+      end if;
+    end check_composite;
+  begin
+    l_font := g_pdf.fonts( p_index );
+    l_buf := dbms_lob.substr( g_pdf.font_files( p_index ), 4096, l_font.ttf_offset );
+    for i in 0 .. to_number( substr( l_buf, 9, 4 ), 'XXXX' ) - 1
+    loop
+      if substr( l_buf, 25 + i * 32, 8 ) = c_loca
+      then
+        l_sz := 4000;
+        l_offset := to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1;
+        for j in 0 .. l_font.numGlyphs
+        loop
+          if mod( j, l_sz ) = 0
+          then
+            l_idx := 0;
+            l_tmp := dbms_lob.substr( g_pdf.font_files( p_index )
+                                    , l_sz * l_font.indexToLocFormat
+                                    , l_offset
+                                    );
+            l_offset := l_offset + l_sz * l_font.indexToLocFormat;
+          end if;
+          l_loca( j ) := to_number( substr( l_tmp, 1 + l_idx, 2 * l_font.indexToLocFormat ), 'XXXXXXXX' );
+          l_idx := l_idx + 2 * l_font.indexToLocFormat;
+        end loop;
+      elsif substr( l_buf, 25 + i * 32, 8 ) = c_glyf
+      then
+        l_glyf_offset := to_number( substr( l_buf, 41 + i * 32, 8 ), 'XXXXXXXX' ) + 1;
+      end if;
+    end loop;
+    if l_loca.count = 0
+    then
+      return;
+    end if;
+    --
+    l_sz := case when l_font.indexToLocFormat = 2 then 2 else 1 end;
+    l_used_glyphs := g_pdf.font_glyph_cache( p_index );
+    l_used := l_used_glyphs.first;
+    while l_used is not null
+    loop
+      l_used_composites( l_used ) := l_used_glyphs( l_used );
+      check_composite( l_used );
+      l_used := l_used_glyphs.next( l_used );
+    end loop;
+    g_pdf.font_glyph_cache( p_index ) := l_used_composites;
+  end handle_composite_glyphs;
   --
   function add_font( p_index pls_integer )
   return number
@@ -2158,7 +4040,6 @@ dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
     l_used        pls_integer;
     l_unicode     pls_integer;
     l_font        tp_font;
-    l_used_glyphs tp_pls_tab;
   begin
     if g_pdf.fonts( p_index ).standard
     then
@@ -2180,19 +4061,18 @@ dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
                 '/Subtype /Type0'            || c_eol ||
                 '/BaseFont /' || l_font.name || c_eol ||
                 '/Encoding /Identity-H'      || c_eol ||
-                '/ToUnicode ' || to_char( l_self + 5 ) || ' 0 R' || c_eol ||
+                '/ToUnicode ' || to_char( l_self + 4 ) || ' 0 R' || c_eol ||
                 '/DescendantFonts [' || to_char( l_self + 1 ) || ' 0 R ]' || c_eol ||
                 '>>' || c_eol || 'endobj'
               ); -- self
     add_object( '/Type /Font' || c_eol       ||
-                '/Subtype /CIDFontType2'     || c_eol ||
+                '/Subtype ' || case when l_font.cff and l_font.subset then '/CIDFontType0' else '/CIDFontType2' end || c_eol ||
                 '/BaseFont /' || l_font.name || c_eol ||
-                '/CIDToGIDMap /Identity'     || c_eol ||
-                '/DW 1000'                   || c_eol ||
-                '/CIDSystemInfo '  || to_char( l_self + 2 ) || ' 0 R' || c_eol ||
-                '/FontDescriptor ' || to_char( l_self + 3 ) || ' 0 R' || c_eol ||
-                '/W ' || to_char( l_self + 4 ) || ' 0 R' );               -- self + 1
-    add_object( '/Ordering (Identity) /Registry (Adobe) /Supplement 0' ); -- self + 2
+                case when l_font.cff and l_font.subset then '' else '/CIDToGIDMap /Identity' end || c_eol ||
+--                '/DW 1000'                   || c_eol ||
+                '/CIDSystemInfo <</Ordering (Identity) /Registry (Adobe) /Supplement 0>>' || c_eol ||
+                '/FontDescriptor ' || to_char( l_self + 2 ) || ' 0 R' || c_eol ||
+                '/W ' || to_char( l_self + 3 ) || ' 0 R' );  -- self + 1
     add_object( '/Type /FontDescriptor'  || c_eol ||
                 '/FontName /' || l_font.name || c_eol ||
                 '/FontFamily (' || replace(
@@ -2210,103 +4090,88 @@ dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
                 '/Descent '     || l_font.descent   || c_eol ||
                 '/CapHeight '   || l_font.capheight || c_eol ||
                 '/StemV '       || l_font.stemv     || c_eol ||
-                case when l_font.fontfile2 is not null then '/FontFile2 ' || to_char( l_self + 6 ) || ' 0 R' end
-              );  -- self + 3
+                case when g_pdf.font_files( p_index ) is not null then case when l_font.cff and l_font.subset then '/FontFile3 ' else '/FontFile2 ' end || to_char( l_self + 5 ) || ' 0 R' end
+              );  -- self + 2
     --
-    l_used_glyphs := l_font.used_glyphs;
-    l_used_glyphs( 0 ) := coalesce( l_font.notdef, 65535 );
-  declare
-    l_next       pls_integer;
-    l_last       pls_integer;
-    l_prev       pls_integer;
-    l_width      number;
-    l_last_width number;
-    l_w varchar2(32767);
-    --
-    function get_width( p_idx pls_integer )
-    return number
-    is
-      l_tmp number;
+    declare
+      l_lw    pls_integer;
+      l_w1    pls_integer;
+      l_w2    pls_integer;
+      l_last  pls_integer;
+      l_prior pls_integer;
+      l_w     varchar2(32767);
+      --
+      function get_width( p_glyph pls_integer )
+      return number
+      is
+        l_tmp   number;
+      begin
+        if g_pdf.font_width_cache( p_index ).exists( p_glyph )
+        then
+          l_tmp := g_pdf.font_width_cache( p_index )( p_glyph );
+        else
+          l_tmp := l_lw;
+        end if;
+        return trunc( l_tmp * l_font.unit_norm );
+      end;
     begin
-      if l_font.hmetrics.exists( p_idx )
-      then
-        l_tmp := l_font.hmetrics( p_idx );
-      else
-        l_tmp := l_font.hmetrics( l_font.hmetrics.last );
-      end if;
-      return trunc( l_tmp * l_font.unit_norm );
-    end;
-  begin
-      l_used_glyphs( 0 ) := coalesce( l_font.notdef, 65535 );
-      l_used := l_used_glyphs.first;
+      l_lw := g_pdf.font_width_cache( p_index )( g_pdf.font_width_cache( p_index ).last );
+      g_pdf.font_old_new( p_index )( 0 ) := 0;
+      l_used := 0;
+      l_w2 := get_width( 0 );
       while l_used is not null
       loop
-        l_width := get_width( l_used );
-        l_next := l_used_glyphs.next( l_used );
-        l_last := l_next;
-        while     l_next is not null
-              and l_width = get_width( l_next )
-        loop
-          l_last := l_next;
-          l_next := l_used_glyphs.next( l_next );
-        end loop;
-        if l_last = l_next or l_last is null
+        l_w1 := l_w2;
+        l_prior := g_pdf.font_old_new( p_index ).prior( l_used );
+        if l_prior is null
         then
-          if l_prev is null
-          then
-            l_w := l_w || ' ' || l_used || ' [' || l_width;
-          elsif l_prev = l_used - 1
-          then
-            l_w := l_w || ' ' || l_width;
-          else
-            l_w := l_w || '] ' || l_used || ' [' || l_width;
-          end if;
-          if l_last is null
-          then
-            l_w := l_w || ']';
-          end if;
-          l_prev := l_used;
-        else
-          if l_prev is not null
-          then
-            l_w := l_w || ']';
-          end if;
-          l_w := l_w || ' ' || l_used || ' ' || l_last || ' ' || l_width;
-          if l_next is null
-          then
-            exit;
-          else
-            l_prev := null;
-            l_used := l_last;
-          end if;
+          l_w := l_w || ' ' || ( - l_used ) || ' [' || l_w1 || ']';
+          exit;
         end if;
-        l_used := l_used_glyphs.next( l_used );
+        l_w2 := get_width( g_pdf.font_old_new( p_index )( l_prior ) );
+        if l_w1 = l_w2
+        then
+          while l_w1 = l_w2
+          loop
+            l_last := - l_prior;
+            l_prior := g_pdf.font_old_new( p_index ).prior( l_prior );
+            exit when l_prior is null;
+            l_w2 := get_width( g_pdf.font_old_new( p_index )( l_prior ) );
+          end loop;
+          l_w := l_w || ' ' || ( - l_used ) || ' ' || l_last || ' ' || l_w1;
+        elsif l_used = l_prior + 1
+        then
+          l_w := l_w || ' ' || ( - l_used ) || ' [' || l_w1;
+          while l_used = l_prior + 1
+          loop
+            l_w := l_w || ' ' || l_w2;
+            l_used := l_prior;
+            l_prior := g_pdf.font_old_new( p_index ).prior( l_prior );
+            exit when l_prior is null;
+            l_w2 := get_width( g_pdf.font_old_new( p_index )( l_prior ) );
+          end loop;
+          l_w := l_w || ']';
+        else
+          l_w := l_w || ' ' || ( - l_used ) || ' [' || l_w1 || ']';
+        end if;
+        l_used := l_prior;
       end loop;
       l_w := '[' || trim( l_w ) || ']';
-      add_object;   -- self + 4
+      add_object;   -- self + 3
       txt2pdfdoc( l_w || c_eol || 'endobj' );
     end;
     --
     declare
       l_cnt          pls_integer;
-      l_remap_symbol pls_integer;
       l_map          varchar2(32767);
       l_cmap         varchar2(32767);
     begin
-      if bitand( l_font.flags, 4 ) > 0 and l_font.numGlyphs < 256
-      then
-        -- assume code 32, space maps to the first code from the font
-        l_remap_symbol := l_font.code2glyph.first - 32;
-      else
-        l_remap_symbol := 0;
-      end if;
       l_cnt := 0;
-      l_used_glyphs := l_font.used_glyphs;
-      l_used := l_used_glyphs.first;
+      l_used := g_pdf.font_glyph_cache( p_index ).first;
       while l_used is not null
       loop
-        l_map := l_map || '<' || to_char( l_used, 'FM0XXX' )
-               || '> <' || to_char( l_used_glyphs( l_used ) - l_remap_symbol, 'FM0XXX' )
+        l_map := l_map || '<' || to_char( g_pdf.font_old_new( p_index )( l_used ), 'FM0XXX' )
+               || '> <' || to_char( g_pdf.font_glyph_cache( p_index )( l_used ), 'FM0XXX' )
                || '>' || chr( 10 );
         if l_cnt = 99
         then
@@ -2316,7 +4181,7 @@ dbms_output.put_line( dbms_lob.substr( l_font.fontfile2
         else
           l_cnt := l_cnt + 1;
         end if;
-        l_used := l_used_glyphs.next( l_used );
+        l_used := g_pdf.font_glyph_cache(p_index ).next( l_used );
       end loop;
       if l_cnt > 0
       then
@@ -2341,20 +4206,35 @@ endcodespacerange
 endcmap
 CMapName currentdict /CMap defineresource pop
 end
-end' ) );   -- self + 5
+end' ) );   -- self + 4
     end;
     --
-    if l_font.fontfile2 is not null
+    if g_pdf.font_files( p_index ) is not null
     then
+      handle_composite_glyphs( p_index );
       l_font_subset := subset_font( p_index );
       l_fontfile := add_stream( l_font_subset
-                              , '/Length1 ' || dbms_lob.getlength( l_font_subset )
-                              );  -- self + 6
-      dbms_lob.freetemporary( l_font_subset );
+                              , '/Length1 ' || dbms_lob.getlength( l_font_subset ) || case when l_font.cff and l_font.subset then ' /Subtype/CIDFontType0C' end
+                              );  -- self + 5
+      if dbms_lob.istemporary( l_font_subset ) = 1
+      then
+        dbms_lob.freetemporary( l_font_subset );
+      end if;
     end if;
     --
     return l_self;
   end add_font;
+  --
+  function add_extgstate( p_idx pls_integer )
+  return number
+  is
+  begin
+    return add_object( '/Type/ExtGState'
+                     || '/CA ' || to_char_round( g_pdf.egs_dir( p_idx ).stroking_alpha )
+                     || '/ca ' || to_char_round( g_pdf.egs_dir( p_idx ).non_stroking_alpha )
+                     || '/BM ' || coalesce( g_pdf.egs_dir( p_idx ).blend_mode, '/Normal' )
+                     );
+  end add_extgstate;
   --
   function add_resources
   return number
@@ -2362,6 +4242,7 @@ end' ) );   -- self + 5
     l_ind   pls_integer;
     l_self  number(10);
     l_fonts tp_objects;
+    l_egs   varchar2(32767);
   begin
     l_ind := g_pdf.fonts.first;
     while l_ind is not null
@@ -2379,6 +4260,16 @@ end' ) );   -- self + 5
       loop
         g_pdf.images( i ).object := add_image( g_pdf.images( i ) );
       end loop;
+    end if;
+    --
+    if g_pdf.egs_dir.count > 0
+    then
+      l_egs := chr(10) || '/ExtGState <<';
+      for i in g_pdf.egs_dir.first .. g_pdf.egs_dir.last
+      loop
+        l_egs := l_egs || chr(10) || '/GS' || i || ' ' || add_extgstate( i ) || ' 0 R';
+      end loop;
+      l_egs := l_egs || chr(10) || '>>' || chr(10);
     end if;
     --
     l_self := add_object;
@@ -2410,9 +4301,61 @@ end' ) );   -- self + 5
       end loop;
       txt2pdfdoc( '>>' );
     end if;
+    --
+    if l_egs is not null
+    then
+      txt2pdfdoc( l_egs );
+    end if;
+    --
     txt2pdfdoc( '>>' || c_eol || 'endobj' );
     return l_self;
   end add_resources;
+  --
+  procedure add_annots( p_annots in out tp_annots )
+  is
+    l_x     number;
+    l_y     number;
+    l_self  integer;
+    l_annot tp_annot;
+  begin
+    for i in 1 .. p_annots.count
+    loop
+      l_annot := p_annots( i );
+      if l_annot.subtype != 'Link'
+      then
+        l_self := add_object;
+        l_x := l_annot.rb_x - l_annot.lt_x + 0.4;
+        txt2pdfdoc( '<</BBox [ 0 0 ' || to_char_round( l_x ) || ' ' || to_char_round( l_annot.lt_y - l_annot.rb_y + 0.4) || ']' );
+        txt2pdfdoc( '/Matrix [ 1 0 0 1 0 0 ] /Resources << >> /Subtype /Form' );
+        l_y := l_annot.extra;
+        put_stream( utl_raw.cast_to_raw(
+             rgb( p_color => l_annot.color ) || ' RG ' ||
+             to_char_round( l_annot.width ) || ' w ' ||
+             '0.1 ' || to_char_round( l_y ) || ' m ' ||
+             to_char_round( l_x - 0.2 ) || '  ' || to_char_round( l_y ) || ' l S' ), l_self, p_tag => false );
+        txt2pdfdoc( 'endobj' );
+      end if;
+      p_annots( i ).object_nr := add_object;
+      txt2pdfdoc( '<<' );
+      if l_annot.subtype != 'Link'
+      then
+        txt2pdfdoc( '/AP <</N ' || l_self || ' 0 R >>' );
+      else
+        txt2pdfdoc( '/A<</S/URI/URI (' || l_annot.url || ') >>' );
+      end if;
+      txt2pdfdoc( '/Type /Annot /Subtype /' || l_annot.subtype );
+      txt2pdfdoc( '/C [' || rgb( p_color => l_annot.color ) || ']' );
+      txt2pdfdoc( '/Rect [ ' ||
+          to_char_round( l_annot.lt_x - 0.2 ) || ' ' || to_char_round( l_annot.lt_y + 0.2 ) || ' ' ||
+          to_char_round( l_annot.rb_x + 0.2 ) || ' ' || to_char_round( l_annot.rb_y - 0.2) || ']' );
+      txt2pdfdoc( '/QuadPoints [ ' ||
+          to_char_round( l_annot.lt_x ) || ' ' || to_char_round( l_annot.lt_y ) || ' ' ||
+          to_char_round( l_annot.rb_x ) || ' ' || to_char_round( l_annot.lt_y ) || ' ' ||
+          to_char_round( l_annot.lt_x ) || ' ' || to_char_round( l_annot.rb_y ) || ' ' ||
+          to_char_round( l_annot.rb_x ) || ' ' || to_char_round( l_annot.rb_y ) || ']' );
+      txt2pdfdoc( '>>' || c_eol || 'endobj' );
+    end loop;
+  end add_annots;
   --
   procedure add_page
     ( p_page_ind pls_integer
@@ -2421,20 +4364,20 @@ end' ) );   -- self + 5
     )
   is
     l_content number(10);
-    l_tmp     tp_links;
-    l_links   tp_pls_tab;
+    l_page tp_page;
     l_annots  varchar2(32767);
+    l_page_annots tp_annots;
   begin
+    l_page := g_pdf.pages( p_page_ind );
+    l_page_annots := l_page.annots;
     l_content := add_stream( g_pdf.pages( p_page_ind ).content, p_compress => true );
-    l_links := g_pdf.pages( p_page_ind ).links;
-    if l_links.count > 0
+    if l_page_annots.count > 0
     then
-      l_tmp := g_pdf.links;
-      for i in 1 .. l_links.count
+      for i in 1 .. l_page_annots.count
       loop
-        l_annots := l_annots || ' ' || l_tmp( l_links( i ) ).object_nr || ' 0 R';
+        l_annots := l_annots || ' ' || l_page_annots( i ).object_nr || ' 0 R';
       end loop;
-      l_annots := ' /Annots [' || l_annots || '] ';
+      l_annots := ' /Annots [' || ltrim( l_annots ) || '] ';
     end if;
     add_object;
     txt2pdfdoc( '<</Type/Page'
@@ -2453,7 +4396,7 @@ end' ) );   -- self + 5
                 || '] ' || l_annots
               || '>>' || c_eol || 'endobj'
               );
-  end;
+  end add_page;
   --
   function add_pages
   return number
@@ -2462,6 +4405,10 @@ end' ) );   -- self + 5
     l_resources number(10);
     l_page_cnt  pls_integer := g_pdf.pages.count;
   begin
+    for i in 0 .. l_page_cnt - 1
+    loop
+      add_annots( g_pdf.pages( i ).annots );
+    end loop;
     l_resources := add_resources;
     l_self := add_object;
     txt2pdfdoc( '<</Type/Pages/Kids [' );
@@ -2748,22 +4695,6 @@ end' ) );   -- self + 5
     return l_self;
   end add_info;
   --
-  procedure add_links
-  is
-    l_link tp_link;
-  begin
-    for i in 1 .. g_pdf.links.count
-    loop
-      l_link := g_pdf.links( i );
-      g_pdf.links( i ).object_nr := add_object
-        ( '/Type/Annot /Subtype/Link /Border[0 0  0] /Rect [ ' ||
-          to_char_round( l_link.lt_x ) || ' ' ||  to_char_round( l_link.lt_y ) || ' ' ||
-          to_char_round( l_link.rb_x ) || ' ' ||  to_char_round( l_link.rb_y ) ||
-          ' ] /A<</S/URI/URI (' || l_link.url || ') >>' || c_eol
-        );
-    end loop;
-  end add_links;
-  --
   function add_encrypt( p_pw varchar2, p_id raw )
   return number
   is
@@ -2828,7 +4759,8 @@ end' ) );   -- self + 5
                     , p_margin_right     number := null
                     , p_margin_top       number := null
                     , p_margin_bottom    number := null
-                    , p_unit             varchar2 := 'cm'
+                    , p_unit             varchar2 := null
+                    , p_text_direction   varchar2 := null
                     )
   is
   begin
@@ -2841,10 +4773,11 @@ end' ) );   -- self + 5
                 , p_margin_top
                 , p_margin_bottom
                 , p_unit
+                , p_text_direction
                 , g_pdf.page_settings
                 );
-    g_pdf.pdf_version := 1.4;
-    g_pdf.line_height_factor := 1;
+    set_pdf_version;
+    set_line_spacing_factor;
   end init_pdf;
   --
   procedure finish_pdf( p_password varchar2 := null )
@@ -2880,7 +4813,7 @@ end' ) );   -- self + 5
       l_page_proc := g_pdf.page_procs( i );
       for j in 1 .. g_pdf.pages.count
       loop
-        g_pdf.current_page := j - 1;
+        set_current_page( j - 1 );
         if l_page_proc.page_nr >= 0 and j >= l_page_proc.page_nr
         then
           case l_page_proc.proc
@@ -2891,6 +4824,7 @@ end' ) );   -- self + 5
                   , l_page_proc.nums( 3 )
                   , l_page_proc.nums( 4 )
                   , l_page_proc.chars( 1 )
+                  , l_page_proc.nums( 5 )
                   );
             when 2
             then
@@ -2901,6 +4835,9 @@ end' ) );   -- self + 5
                   , l_page_proc.chars( 1 )
                   , l_page_proc.chars( 2 )
                   , l_page_proc.nums( 5 )
+                  , l_page_proc.nums( 6 )
+                  , l_page_proc.nums( 7 ) = 1
+                  , l_page_proc.nums( 8 )
                   );
             when 3
             then
@@ -2908,14 +4845,15 @@ end' ) );   -- self + 5
                 l_steps tp_numbers;
               begin
                 l_steps := tp_numbers();
-                l_steps.extend( l_page_proc.nums.count - 1 );
-                for i in 1 .. l_page_proc.nums.count - 1
+                l_steps.extend( l_page_proc.nums.count - 2 );
+                for i in 1 .. l_page_proc.nums.count - 2
                 loop
-                  l_steps( i ) := l_page_proc.nums( i + 1 );
+                  l_steps( i ) := l_page_proc.nums( i + 2 );
                 end loop;
                 path( l_steps
                     , l_page_proc.nums( 1 )
                     , l_page_proc.chars( 1 )
+                    , l_page_proc.nums( 2 )
                     );
               end;
             when 4
@@ -2930,6 +4868,7 @@ end' ) );   -- self + 5
                     , l_page_proc.nums( 8 )
                     , l_page_proc.nums( 9 )
                     , l_page_proc.chars( 1 )
+                    , l_page_proc.nums( 10 )
                     );
             when 5
             then
@@ -2941,6 +4880,7 @@ end' ) );   -- self + 5
                       , l_page_proc.nums( 6 )
                       , l_page_proc.nums( 7 )
                       , l_page_proc.chars( 1 )
+                      , l_page_proc.nums( 8 )
                       );
             when 6
             then
@@ -2952,6 +4892,7 @@ end' ) );   -- self + 5
                       , l_page_proc.nums( 6 )
                       , l_page_proc.nums( 7 )
                       , l_page_proc.chars( 1 )
+                      , l_page_proc.nums( 8 )
                       );
             when 8
             then
@@ -2963,6 +4904,8 @@ end' ) );   -- self + 5
                     , l_page_proc.chars( 2 )
                     , l_page_proc.nums( 5 )
                     , l_page_proc.nums( 6 )
+                    , l_page_proc.nums( 7 ) = 1
+                    , l_page_proc.nums( 8 )
                     );
             when 9
             then
@@ -2989,6 +4932,7 @@ end' ) );   -- self + 5
                      , l_page_proc.nums( 4 )
                      , l_page_proc.nums( 5 )
                      , l_page_proc.chars( 1 )
+                     , p_options => l_page_proc.chars( 3 )
                      );
             when 11
             then
@@ -3011,23 +4955,27 @@ end' ) );   -- self + 5
                         , l_page_proc.chars( 4 )
                         , l_page_proc.nums( 7 )
                         , l_page_proc.chars( 6 )
+                        , l_page_proc.chars( 7 )
                         );
             when 12
             then
-              link( replace(
-                    replace( case when l_page_proc.nchar is not null
-                               then l_page_proc.nchar
-                               else l_page_proc.chars( 3 )
-                             end
-                           , '#PAGE_NR#', j )
-                           , '"PAGE_COUNT#', g_pdf.pages.count )
-                  , l_page_proc.chars( 1 )
-                  , l_page_proc.nums( 1 )
-                  , l_page_proc.nums( 2 )
-                  , l_page_proc.nums( 3 )
-                  , l_page_proc.nums( 4 )
-                  , l_page_proc.chars( 2 )
-                  );
+              annot( p_subtype    => l_page_proc.chars( 1 )
+                   , p_txt        => replace(
+                                     replace( case when l_page_proc.nchar is not null
+                                                then l_page_proc.nchar
+                                                else l_page_proc.chars( 2 )
+                                              end
+                                            , '#PAGE_NR#', j )
+                                            , '"PAGE_COUNT#', g_pdf.pages.count )
+                   , p_x          => l_page_proc.nums( 1 )
+                   , p_y          => l_page_proc.nums( 2 )
+                   , p_font_index => l_page_proc.nums( 3 )
+                   , p_fontsize   => l_page_proc.nums( 4 )
+                   , p_line_width => l_page_proc.nums( 5 )
+                   , p_color      => l_page_proc.chars( 3 )
+                   , p_txt_color  => l_page_proc.chars( 4 )
+                   , p_url        => l_page_proc.chars( 5 )
+                   );
           end case;
         end if;
       end loop;
@@ -3043,7 +4991,6 @@ end' ) );   -- self + 5
     end if;
     get_producer;
     l_info := add_info;
-    add_links;
     l_catalogue := add_catalogue;
     l_xref := dbms_lob.getlength( g_pdf.pdf_blob );
     txt2pdfdoc( 'xref' );
@@ -3071,96 +5018,6 @@ end' ) );   -- self + 5
       raise_application_error( -20027, 'A PDF/A file can not be encrypted.' );
     end if;
   end finish_pdf;
-  --
-  function rgb( p_hex varchar2 )
-  return varchar2
-  is
-  begin
-    return to_char_round( nvl( to_number( substr( p_hex, 1, 2 ), 'xx' ) / 255
-                             , 0 ), 5 ) || ' '
-        || to_char_round( nvl( to_number( substr( p_hex, 3, 2 ), 'xx' ) / 255
-                             , 0 ), 5 ) || ' '
-        || to_char_round( nvl( to_number( substr( p_hex, 5, 2 ), 'xx' ) / 255
-                             , 0 ), 5 ) || ' ';
-  end rgb;
-  --
-  function rgb( p_color varchar2 )
-  return varchar2
-  is
-  begin
-    if g_color_names.exists( lower( p_color ) )
-    then
-      return rgb( p_hex => g_color_names( lower( p_color ) ) );
-    else
-      return rgb( p_hex => ltrim( p_color, '#' ) );
-    end if;
-  end rgb;
-  --
-  procedure set_color( p_rgb varchar2, p_backgr boolean )
-  is
-  begin
-    if p_backgr
-    then
-      g_pdf.bk_color := rgb( p_color => p_rgb ) || 'RG ';
-      txt2page( g_pdf.bk_color );
-    else
-      g_pdf.color := rgb( p_color => p_rgb ) || 'rg ';
-      txt2page( g_pdf.color );
-    end if;
-  end set_color;
-  --
-  procedure set_color
-    ( p_red    number
-    , p_green  number
-    , p_blue   number
-    , p_backgr boolean
-    )
-  is
-  begin
-    if (     p_red between 0 and 255
-       and p_blue  between 0 and 255
-       and p_green between 0 and 255
-       )
-    then
-      set_color(  to_char( p_red, 'fm0x' )
-               || to_char( p_green, 'fm0x' )
-               || to_char( p_blue, 'fm0x' )
-               , p_backgr
-               );
-    end if;
-  end set_color;
-  --
-  procedure set_color( p_rgb varchar2 := '000000' )
-  is
-  begin
-    set_color( p_rgb, false);
-  end set_color;
---
-  procedure set_color
-    ( p_red   number := 0
-    , p_green number := 0
-    , p_blue  number := 0
-    )
-  is
-  begin
-    set_color( p_red, p_green, p_blue, false );
-  end set_color;
-  --
-  procedure set_bk_color( p_rgb varchar2 := 'ffffff' )
-  is
-  begin
-    set_color( p_rgb, true );
-  end set_bk_color;
---
-  procedure set_bk_color
-    ( p_red   number := 255
-    , p_green number := 255
-    , p_blue  number := 255
-    )
-  is
-  begin
-    set_color( p_red, p_green, p_blue, true );
-  end set_bk_color;
   --
   procedure add_page_proc
     ( p_proc    pls_integer
@@ -3207,7 +5064,7 @@ $END
     )
   is
   begin
-    txt2page( 'q ' || to_char_round( coalesce( p_line_width, 0.5 ), 5 ) || ' w' );
+    txt2page( 'q ' || to_char_round( coalesce( case when p_line_width != 0 then p_line_width end, c_default_line_width ), 5 ) || ' w' );
     if p_line_color is not null
     then
       txt2page( rgb( p_color => p_line_color ) || 'RG' );
@@ -3224,7 +5081,7 @@ $END
     )
   is
   begin
-    txt2page( 'q ' || to_char_round( coalesce( p_line_width, 0.5 ), 5 ) || ' w' );
+    txt2page( 'q ' || to_char_round( coalesce( case when p_line_width != 0 then p_line_width end, c_default_line_width ), 5 ) || ' w' );
     if p_line_color is not null
     then
       txt2page( rgb( p_color => p_line_color ) || 'RG' );
@@ -3241,6 +5098,48 @@ $END
     end if;
   end graphics_init_and_fill;
   --
+  procedure graphics_close( p_transparant boolean )
+  is
+  begin
+    if p_transparant
+    then
+      txt2page( ' s Q' );
+    else
+      txt2page( ' b Q' );
+    end if;
+  end graphics_close;
+  --
+  procedure add_alpha( p_alpha number, p_blend_mode varchar2 := null )
+  is
+    l_idx pls_integer;
+    l_egs tp_extgstate;
+  begin
+    if p_alpha is null or p_alpha not between 0 and 1
+    then
+      return;
+    end if;
+    l_idx := g_pdf.egs_dir.first;
+    loop
+      exit when l_idx is null;
+      l_egs := g_pdf.egs_dir( l_idx );
+      exit when l_egs.stroking_alpha = p_alpha
+            and l_egs.non_stroking_alpha = p_alpha
+            and (  ( p_blend_mode is null and l_egs.blend_mode is null )
+                or p_blend_mode = l_egs.blend_mode
+                );
+      l_idx := g_pdf.egs_dir.next( l_idx );
+    end loop;
+    if l_idx is null
+    then
+      l_idx := g_pdf.egs_dir.count + 1;
+      l_egs.blend_mode := p_blend_mode;
+      l_egs.stroking_alpha := p_alpha;
+      l_egs.non_stroking_alpha := p_alpha;
+      g_pdf.egs_dir( l_idx ) := l_egs;
+    end if;
+    txt2page( ' /GS' || l_idx || ' gs ' );
+  end add_alpha;
+  --
   procedure line
     ( p_x1         number
     , p_y1         number
@@ -3248,6 +5147,7 @@ $END
     , p_y2         number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3255,6 +5155,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_set_line( p_line_width, p_line_color );
+      add_alpha( p_alpha );
       txt2page(  to_char_round( p_x1, 5 ) || ' '
               || to_char_round( p_y1, 5 ) || ' m '
               || to_char_round( p_x2, 5 ) || ' '
@@ -3263,7 +5164,7 @@ $END
               );
     else
       add_page_proc( 1, p_page_proc
-                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_line_width )
+                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_line_width, p_alpha )
                    , p_chars => tp_varchar2s( p_line_color )
                    );
     end if;
@@ -3275,6 +5176,7 @@ $END
     , p_width      number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3288,6 +5190,7 @@ $END
     , p_height     number
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3296,27 +5199,60 @@ $END
   end vertical_line;
   --
   procedure rect
-    ( p_x          number
-    , p_y          number
-    , p_width      number
-    , p_height     number
-    , p_line_color varchar2    := null
-    , p_fill_color varchar2    := null
-    , p_line_width number      := null
-    , p_page_proc  pls_integer := null
+    ( p_x           number
+    , p_y           number
+    , p_width       number
+    , p_height      number
+    , p_line_color  varchar2    := null
+    , p_fill_color  varchar2    := null
+    , p_line_width  number      := null
+    , p_radius      number      := null
+    , p_transparant boolean     := null
+    , p_alpha       number      := null
+    , p_page_proc   pls_integer := null
     )
   is
+    l_a      number;
+    l_b      number;
+    l_radius number;
   begin
     if p_page_proc is null
     then
       graphics_init_and_fill( p_line_width, p_fill_color, p_line_color );
-      txt2page(  to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' '
-              || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' re '
-              || 'b Q'
+      add_alpha( p_alpha );
+      if p_radius > 0
+      then
+        l_radius := least( p_radius, p_width / 2, p_height / 2);
+        l_a := l_radius;
+        l_b := .55228474983 * l_radius;
+      txt2page(  ' 1 0 0 1 '
+              || to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' cm '
+              || to_char_round( l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' m '
+              || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( - l_a + l_radius, 5 ) || ' '
+              || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( - l_b + l_radius, 5 ) || ' '
+              || to_char_round( 0, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' c '
+              || to_char_round( 0, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' l '
+              || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
+              || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
+              || to_char_round( l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' c '
+              || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' l '
+              || to_char_round( l_b - l_radius + p_width, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
+              || to_char_round( l_a - l_radius+ p_width, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
+              || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' c '
+              || to_char_round( p_width, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' l '
+              || to_char_round( l_a + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_b, 5 ) || ' '
+              || to_char_round( l_b + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_a, 5 ) || ' '
+              || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' c '
               );
+      else
+        txt2page(  to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' '
+                || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' re '
+                );
+      end if;
+      graphics_close( p_transparant );
     else
       add_page_proc( 2, p_page_proc
-                   , p_nums  => tp_numbers( p_x, p_y, p_width, p_height, p_line_width )
+                   , p_nums  => tp_numbers( p_x, p_y, p_width, p_height, p_line_width, p_radius, case when p_transparant then 1 else 0 end, p_alpha )
                    , p_chars => tp_varchar2s( p_fill_color, p_line_color )
                    );
     end if;
@@ -3326,6 +5262,7 @@ $END
     ( p_steps      tp_numbers
     , p_line_width number      := null
     , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3342,6 +5279,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_set_line( p_line_width, p_line_color );
+      add_alpha( p_alpha );
       l_first := p_steps.first;
       l_path :=   to_char_round( p_steps( l_first ), 5 )     || ' '
                || to_char_round( p_steps( l_first + 1 ), 5 ) || ' m ';
@@ -3353,11 +5291,12 @@ $END
       txt2page( l_path || 'S Q' );
     else
       l_nums := tp_numbers();
-      l_nums.extend( p_steps.count + 1 );
+      l_nums.extend( p_steps.count + 2 );
       l_nums( 1 ) := p_line_width;
+      l_nums( 2 ) := p_alpha;
       for i in 1 .. p_steps.count
       loop
-        l_nums( i + 1 ) := p_steps( i );
+        l_nums( i + 2 ) := p_steps( i );
       end loop;
       add_page_proc( 3, p_page_proc
                    , p_nums  => l_nums
@@ -3367,16 +5306,17 @@ $END
   end path;
   --
   procedure bezier
-    ( p_x1         in number
-    , p_y1         in number
-    , p_x2         in number
-    , p_y2         in number
-    , p_x3         in number
-    , p_y3         in number
-    , p_x4         in number
-    , p_y4         in number
-    , p_line_width in number   := null
-    , p_line_color in varchar2 := null
+    ( p_x1         number
+    , p_y1         number
+    , p_x2         number
+    , p_y2         number
+    , p_x3         number
+    , p_y3         number
+    , p_x4         number
+    , p_y4         number
+    , p_line_width number      := null
+    , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3384,6 +5324,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_set_line( p_line_width, p_line_color );
+      add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
               || to_char_round( p_x2, 5 ) || ' ' || to_char_round( p_y2, 5 ) || ' '
@@ -3393,21 +5334,22 @@ $END
               );
     else
       add_page_proc( 4, p_page_proc
-                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_x4, p_y4, p_line_width )
+                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_x4, p_y4, p_line_width, p_alpha )
                    , p_chars => tp_varchar2s( p_line_color )
                    );
     end if;
   end bezier;
   --
   procedure bezier_v
-    ( p_x1         in number
-    , p_y1         in number
-    , p_x2         in number
-    , p_y2         in number
-    , p_x3         in number
-    , p_y3         in number
-    , p_line_width in number   := null
-    , p_line_color in varchar2 := null
+    ( p_x1         number
+    , p_y1         number
+    , p_x2         number
+    , p_y2         number
+    , p_x3         number
+    , p_y3         number
+    , p_line_width number      := null
+    , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3415,6 +5357,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_set_line( p_line_width, p_line_color );
+      add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
               || to_char_round( p_x2, 5 ) || ' ' || to_char_round( p_y2, 5 ) || ' '
@@ -3423,21 +5366,22 @@ $END
               );
     else
       add_page_proc( 5, p_page_proc
-                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width )
+                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width, p_alpha )
                    , p_chars => tp_varchar2s( p_line_color )
                    );
     end if;
   end bezier_v;
   --
   procedure bezier_y
-    ( p_x1         in number
-    , p_y1         in number
-    , p_x2         in number
-    , p_y2         in number
-    , p_x3         in number
-    , p_y3         in number
-    , p_line_width in number   := null
-    , p_line_color in varchar2 := null
+    ( p_x1         number
+    , p_y1         number
+    , p_x2         number
+    , p_y2         number
+    , p_x3         number
+    , p_y3         number
+    , p_line_width number      := null
+    , p_line_color varchar2    := null
+    , p_alpha      number      := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -3445,6 +5389,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_set_line( p_line_width, p_line_color );
+      add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
               || to_char_round( p_x2, 5 ) || ' ' || to_char_round( p_y2, 5 ) || ' '
@@ -3453,20 +5398,22 @@ $END
               );
     else
       add_page_proc( 6, p_page_proc
-                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width )
+                   , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width, p_alpha )
                    , p_chars => tp_varchar2s( p_line_color )
                    );
     end if;
   end bezier_y;
   --
   procedure circle
-    ( p_x          in number
-    , p_y          in number
-    , p_radius     in number
-    , p_line_color in varchar2 := null
-    , p_fill_color in varchar2 := null
-    , p_line_width in number   := null
-    , p_page_proc  pls_integer := null
+    ( p_x           number
+    , p_y           number
+    , p_radius      number
+    , p_line_color  varchar2 := null
+    , p_fill_color  varchar2 := null
+    , p_line_width  number   := null
+    , p_transparant boolean     := false
+    , p_alpha       number      := null
+    , p_page_proc   pls_integer := null
     )
   is
   begin
@@ -3477,6 +5424,8 @@ $END
           , p_line_color   => p_line_color
           , p_fill_color   => p_fill_color
           , p_line_width   => p_line_width
+          , p_transparant  => p_transparant
+          , p_alpha        => p_alpha
           , p_page_proc    => p_page_proc
           );
   end circle;
@@ -3490,6 +5439,8 @@ $END
     , p_fill_color       varchar2    := null
     , p_line_width       number      := null
     , p_degrees_rotation number      := null
+    , p_transparant      boolean     := false
+    , p_alpha            number      := null
     , p_page_proc        pls_integer := null
     )
   is
@@ -3505,6 +5456,7 @@ $END
     if p_page_proc is null
     then
       graphics_init_and_fill( p_line_width, p_fill_color, p_line_color );
+      add_alpha( p_alpha );
       if coalesce( p_degrees_rotation, 0 ) != 0
       then
         l_rad := p_degrees_rotation / 180 * 3.14159265358979323846264338327950288419716939937510;
@@ -3530,17 +5482,156 @@ $END
               || to_char_round( - l_c, 5 ) || ' ' || to_char_round( l_b, 5 ) || ' '
               || to_char_round( - l_d, 5 ) || ' ' || to_char_round( l_a, 5 ) || ' '
               || to_char_round( 0, 5 ) || ' ' || to_char_round( l_a, 5 ) || ' c '
-              || 'b Q'
               );
+      graphics_close( p_transparant );
     else
       add_page_proc( 8, p_page_proc
-                   , p_nums  => tp_numbers( p_x, p_y, p_major_radius, p_minor_radius, p_line_width, p_degrees_rotation )
+                   , p_nums  => tp_numbers( p_x, p_y, p_major_radius, p_minor_radius, p_line_width, p_degrees_rotation, case when p_transparant then 1 else 0 end, p_alpha )
                    , p_chars => tp_varchar2s( p_line_color, p_fill_color )
                    );
     end if;
   end ellips;
   --
-  function get( p_what pls_integer )
+  procedure annot
+    ( p_subtype    varchar2
+    , p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_txt_color  varchar2    := null
+    , p_color      varchar2    := null
+    , p_url        varchar2    := null
+    , p_put_txt    boolean     := true
+    , p_page_proc  pls_integer := null
+    )
+  is
+    l_annot      tp_annot;
+    l_font       tp_font;
+    l_top        number;
+    l_fontsize   number;
+    l_font_index pls_integer;
+  begin
+    if p_txt is null
+    then
+      return;
+    end if;
+    if p_page_proc is null
+    then
+      l_font_index := gfi( p_font_index );
+      l_font := g_pdf.fonts( l_font_index );
+      l_fontsize := coalesce( p_fontsize, l_font.fontsize, c_default_fontsize );
+      if p_put_txt
+      then
+        put_txt( p_x, p_y, p_txt, null, l_font_index, l_fontsize, p_txt_color );
+      end if;
+      l_annot.subtype := p_subtype;
+      l_annot.url := p_url;
+      l_annot.color := p_color;
+      l_annot.extra := case p_subtype
+                         when 'Underline' then ( abs( l_font.descent ) + coalesce( l_font.underline_pos, -100 ) ) * l_fontsize / 1000
+                         when 'StrikeOut' then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) * l_fontsize / 1000
+                         else 0
+                       end;
+      l_annot.width := 0;
+      l_annot.lt_x := p_x;
+      l_annot.lt_y := p_y + l_font.ascent * l_fontsize / 1000;
+      l_annot.rb_x := p_x + str_len( p_txt, l_font_index, l_fontsize );
+      l_annot.rb_y := p_y + l_font.descent * l_fontsize / 1000;
+      g_pdf.pages( g_pdf.current_page ).annots( g_pdf.pages( g_pdf.current_page ).annots.count + 1 ) := l_annot;
+    else
+      add_page_proc( 12, p_page_proc
+                   , p_nums  => tp_numbers( p_x, p_y, p_font_index, p_fontsize, p_line_width )
+                   , p_chars => tp_varchar2s( p_subtype, p_txt, p_txt_color, p_color, p_url )
+                   , p_nchar => case when isnchar( p_txt ) then p_txt end
+                   );
+    end if;
+  end annot;
+  --
+  procedure underline
+    ( p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_color      varchar2    := null
+    , p_txt_color  varchar2    := null
+    , p_page_proc  pls_integer := null
+    )
+  is
+  begin
+    annot( p_subtype    => 'Underline'
+         , p_txt        => p_txt
+         , p_x          => p_x
+         , p_y          => p_y
+         , p_font_index => p_font_index
+         , p_fontsize   => p_fontsize
+         , p_line_width => p_line_width
+         , p_color      => p_color
+         , p_txt_color  => p_txt_color
+         , p_page_proc  => p_page_proc
+         );
+  end underline;
+  --
+  procedure strikeout
+    ( p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_line_width number      := null
+    , p_color      varchar2    := null
+    , p_txt_color  varchar2    := null
+    , p_page_proc  pls_integer := null
+    )
+  is
+  begin
+    annot( p_subtype    => 'StrikeOut'
+         , p_txt        => p_txt
+         , p_x          => p_x
+         , p_y          => p_y
+         , p_font_index => p_font_index
+         , p_fontsize   => p_fontsize
+         , p_line_width => p_line_width
+         , p_color      => p_color
+         , p_txt_color  => p_txt_color
+         , p_page_proc  => p_page_proc
+         );
+  end strikeout;
+  --
+  procedure link
+    ( p_txt        varchar2 character set any_cs
+    , p_url        varchar2
+    , p_x          number
+    , p_y          number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_color      varchar2    := null
+    , p_page_proc  pls_integer := null
+    )
+  is
+  begin
+    if p_txt is null or p_url is null
+    then
+      return;
+    end if;
+    annot( p_subtype    => 'Link'
+         , p_txt        => p_txt
+         , p_x          => p_x
+         , p_y          => p_y
+         , p_font_index => p_font_index
+         , p_fontsize   => p_fontsize
+         , p_url        => p_url
+         , p_txt_color  => p_color
+         , p_page_proc  => p_page_proc
+         );
+  end link;
+  --
+  function get( p_what pls_integer
+              , p_idx  pls_integer := null
+              )
   return number
   is
   begin
@@ -3565,6 +5656,8 @@ $END
         when c_get_total_fonts       then g_pdf.fonts.count
         when c_get_total_pages       then g_pdf.pages.count
         when c_get_current_page      then g_pdf.current_page
+        when c_get_font_win_ascent   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_ascent
+        when c_get_font_win_descent  then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_descent
       end;
   end get;
   --
@@ -3637,6 +5730,10 @@ $END
     if l_index is not null
     then
       g_pdf.fonts_used := true;
+      if g_pdf.current_page is null
+      then
+        new_page;
+      end if;
       if l_index != coalesce( g_pdf.current_font, - l_index )
       then
         g_pdf.current_font := l_index;
@@ -4446,7 +6543,7 @@ $END
                     )
         then
           l_hex := rawtohex( dbms_lob.substr( p_img, 5, l_ind + 4 ) );
-          l_img.color_res := to_number( substr( l_hex, 1, 2 ), 'xx' );
+          l_img.color_res := g_hex( substr( l_hex, 1, 2 ) );
           l_img.width  := to_number( substr( l_hex, 7 ), 'xxxx' );
           l_img.height := to_number( substr( l_hex, 3, 4 ), 'xxxx' );
           exit;
@@ -4488,7 +6585,7 @@ $END
     l_img.height    := to_number( utl_raw.reverse( utl_raw.substr( l_buf, 23, 4 ) ), 'XXXXXXXX' );
     l_offset        := to_number( utl_raw.reverse( utl_raw.substr( l_buf, 11, 4 ) ), 'XXXXXXXX' );
     l_img.color_res := to_number( utl_raw.reverse( utl_raw.substr( l_buf, 29, 2 ) ), 'XXXXXXXX' );
-    l_compression   := to_number( utl_raw.substr( l_buf, 31, 1 ), 'XX' );
+    l_compression   := g_hex( utl_raw.substr( l_buf, 31, 1 ) );
     l_line_sz := ceil( ceil( l_img.width * l_img.color_res / 8 ) / 4 ) * 4;
     if l_img.color_res <= 8
     then
@@ -4594,9 +6691,9 @@ $END
   end calc_crc32;
   --
   function parse_img
-    ( p_blob  in blob
-    , p_crc32 in varchar2 := null
-    , p_type  in varchar2 := null
+    ( p_blob  blob
+    , p_crc32 varchar2 := null
+    , p_type  varchar2 := null
     )
   return tp_img
   is
@@ -4613,7 +6710,7 @@ $END
       elsif utl_raw.substr( l_buf, 1, 3 ) = hextoraw( '474946' ) -- GIF
       then
         l_img.type := 'gif';
-     elsif utl_raw.substr( l_buf, 1, 2 ) = hextoraw( 'FFD8' ) -- SOI Start of Image
+      elsif utl_raw.substr( l_buf, 1, 2 ) = hextoraw( 'FFD8' ) -- SOI Start of Image
         and rawtohex( utl_raw.substr( l_buf, 3, 2 ) ) in ( 'FFE0' -- a APP0 jpg
                                                          , 'FFE1' -- a APP1 jpg
                                                          )
@@ -4647,7 +6744,7 @@ $END
     l_idx   pls_integer;
     l_crc32 varchar2(8);
   begin
-    if p_img is null
+    if p_img is null or dbms_lob.getlength( p_img ) = 0
     then
       return null;
     end if;
@@ -4690,6 +6787,89 @@ $END
     return l_idx;
   end load_image;
   --
+  function load_image( p_url varchar2 )
+  return pls_integer
+  is
+    l_pos pls_integer;
+  begin
+    if p_url is null
+    then
+      return null;
+    end if;
+    if substr( p_url, 1, 11 ) = 'data:image/'
+    then
+      l_pos := instr( p_url, ';base64,' );
+      if l_pos = 0
+      then
+        raise_application_error( -20040, 'No supported data URL image.' );
+      end if;
+      return load_image( p_img => utl_encode.base64_decode( utl_raw.cast_to_raw( substr( p_url, l_pos + 8 ) ) ) );
+    end if;
+    if p_url not like 'http%'
+    then
+      raise_application_error( -20041, 'No supported (data) URL image.' );
+    end if;
+$IF as_pdf.use_apex
+$THEN
+    return load_image( p_img => apex_web_service.make_rest_request_b
+                                  ( p_url            => p_url
+                                  , p_http_method    => 'GET'
+                                  , p_proxy_override => g_proxy
+                                  , p_wallet_path    => g_wallet_path
+                                  , p_wallet_pwd     => g_wallet_password
+                                  )
+                     );
+$ELSIF as_pdf.use_utl_http
+$THEN
+    declare
+      l_img      blob;
+      l_buf      raw(32767);
+      l_proxy    varchar2(32767);
+      l_no_proxy varchar2(32767);
+      l_rck      utl_http.request_context_key;
+      l_req      utl_http.req;
+      l_resp     utl_http.resp;
+      e_no_img   exception;
+    begin
+      utl_http.get_proxy( l_proxy, l_no_proxy );
+      utl_http.set_proxy( g_proxy, g_no_proxy );
+      utl_http.set_detailed_excp_support( true );
+      l_rck := utl_http.create_request_context( wallet_path => g_wallet_path, wallet_password => g_wallet_password );
+      l_req := utl_http.begin_request( url => p_url, request_context => l_rck );
+      l_resp := utl_http.get_response( l_req );
+      if l_resp.status_code != 200
+      then
+        raise e_no_img;
+      end if;
+      dbms_lob.createtemporary( l_img, true );
+      begin
+        loop
+          utl_http.read_raw( l_resp, l_buf, 32767 );
+          dbms_lob.writeappend( l_img, utl_raw.length( l_buf ), l_buf );
+        end loop;
+      exception
+        when utl_http.end_of_body then
+          utl_http.end_response( l_resp );
+      end;
+      utl_http.destroy_request_context( l_rck );
+      utl_http.set_proxy( l_proxy, l_no_proxy );
+      return load_image( p_img => l_img );
+    exception
+      when e_no_img then
+        utl_http.set_proxy( l_proxy, l_no_proxy );
+        utl_http.end_response( l_resp );
+        raise_application_error( -20042, 'No image found at ' || p_url );
+      when others then
+        utl_http.set_proxy( l_proxy, l_no_proxy );
+        utl_http.end_request( l_req );
+        utl_http.destroy_request_context( l_rck );
+        raise;
+    end;
+$ELSE
+      raise_application_error( -20043, 'Image download not supported.' );
+$END
+  end load_image;
+  --
   procedure put_image
     ( p_img_idx   pls_integer
     , p_x         number               -- left
@@ -4705,6 +6885,7 @@ $END
     l_y      number;
     l_width  number;
     l_height number;
+    l_hpad   number;
     l_img    tp_img;
   begin
     if p_img_idx is null or not g_pdf.images.exists( p_img_idx )
@@ -4716,10 +6897,24 @@ $END
     then
       l_img := g_pdf.images( p_img_idx );
       --
-      if l_img.width > p_width
+      if    l_img.width > p_width
+         or (   p_width is not null
+            and substr( upper( p_align ), 1, 1 ) = 'F' -- fill
+            )
       then
         l_width := p_width;
         l_height := l_img.height * p_width / l_img.width;
+      elsif (   p_height is not null
+            and substr( upper( p_valign ), 1, 1 ) = 'F' -- fill
+            )
+      then
+        l_width := l_img.width * p_height / l_img.height;
+        l_height := p_height;
+        if l_width > p_width
+        then
+          l_width := p_width;
+          l_height := l_height * p_width / l_width;
+        end if;
       else
         l_width := l_img.width;
         l_height := l_img.height;
@@ -4731,16 +6926,17 @@ $END
       end if;
       --
       l_x := case substr( upper( p_align ), 1, 1 )
-               when 'L' then p_x -- left
-               when 'S' then p_x -- start
-               when 'R' then p_x + nvl( p_width, 0 ) - l_width -- right
-               when 'E' then p_x + nvl( p_width, 0 ) - l_width -- end
-               else p_x + ( nvl( p_width, 0 ) - l_width ) / 2  -- center
+               when 'R' then p_x + coalesce( p_width - l_width, 0 )     -- right
+               when 'E' then p_x + coalesce( p_width - l_width, 0 )     -- end
+               when 'C' then p_x + coalesce( p_width - l_width, 0 ) / 2 -- center
+               when 'F' then p_x + coalesce( p_width - l_width, 0 ) / 2 -- fill
+               else p_x                                                 -- left, start
              end;
       l_y := case substr( upper( p_valign ), 1, 1 )
-               when 'C' then p_y - nvl( p_height, l_height ) + l_height / 2 -- center
-               when 'T' then p_y  - l_height                             -- top
-               else p_y                                                  -- bottom
+               when 'C' then p_y + coalesce( p_height - l_height, 0 ) / 2 -- center
+               when 'F' then p_y + coalesce( p_height - l_height, 0 ) / 2 -- fill
+               when 'T' then p_y + coalesce( p_height - l_height, 0 )     -- top
+               else p_y                                                   -- bottom
              end;
       --
       txt2page(  'q '
@@ -4757,27 +6953,29 @@ $END
   end put_image;
   --
   procedure put_image
-    ( p_img    blob
+    ( p_img       blob
     , p_x         number               -- left
     , p_y         number               -- bottom
     , p_width     number      := null
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
-  )
+    , p_page_proc pls_integer := null
+    )
   is
   begin
     if p_img is null
     then
       return;
     end if;
-    put_image( load_image( p_img )
-             , p_x
-             , p_y
-             , p_width
-             , p_height
-             , p_align
-             , p_valign
+    put_image( p_img_idx   => load_image( p_img )
+             , p_x         => p_x
+             , p_y         => p_y
+             , p_width     => p_width
+             , p_height    => p_height
+             , p_align     => p_align
+             , p_valign    => p_valign
+             , p_page_proc => p_page_proc
              );
   end;
   --
@@ -4790,23 +6988,47 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_page_proc pls_integer := null
   )
   is
-    l_blob blob;
   begin
-    l_blob := file2blob( p_dir
-                       , p_file_name
-                       );
-    put_image( l_blob
-             , p_x
-             , p_y
-             , p_width
-             , p_height
-             , p_align
-             , p_valign
+    put_image( p_img_idx   => load_image( p_dir, p_file_name )
+             , p_x         => p_x
+             , p_y         => p_y
+             , p_width     => p_width
+             , p_height    => p_height
+             , p_align     => p_align
+             , p_valign    => p_valign
+             , p_page_proc => p_page_proc
              );
-    dbms_lob.freetemporary( l_blob );
   end put_image;
+  --
+  procedure put_image
+    ( p_url       varchar2
+    , p_x         number               -- left
+    , p_y         number               -- bottom
+    , p_width     number      := null
+    , p_height    number      := null
+    , p_align     varchar2    := null
+    , p_valign    varchar2    := null
+    , p_page_proc pls_integer := null
+  )
+  is
+  begin
+    if p_url is null
+    then
+      return;
+    end if;
+    put_image( p_img_idx   => load_image( p_url )
+             , p_x         => p_x
+             , p_y         => p_y
+             , p_width     => p_width
+             , p_height    => p_height
+             , p_align     => p_align
+             , p_valign    => p_valign
+             , p_page_proc => p_page_proc
+             );
+  end;
   --
   procedure add_embedded_file
     ( p_name    varchar2
@@ -4834,6 +7056,13 @@ $END
     finish_pdf( p_password );
     return g_pdf.pdf_blob;
   end finish_pdf;
+  --
+  function get_pdf( p_password varchar2 := null )
+  return blob
+  is
+  begin
+    return finish_pdf( p_password );
+  end get_pdf;
   --
 $IF as_pdf.use_utl_file
 $THEN
@@ -4872,7 +7101,7 @@ $ELSE
     )
   is
   begin
-    raise_application_error( -20026, 'utl_file not available. Change the package header, set as_pdf.use_utl_file := true; when you have access to utl_file.' );
+    raise_application_error( -20026, 'utl_file not available. Change the package header, set use_utl_file := true; when you have access to utl_file.' );
   end save_pdf;
 $END
   --
@@ -4991,7 +7220,7 @@ $END
     p_cfh.k := little_endian( l_buf, 33, 2 );
     p_cfh.len := 46 + p_cfh.n + p_cfh.m + p_cfh.k;
     --
-    p_cfh.utf8 := bitand( to_number( utl_raw.substr( l_buf, 10, 1 ), 'XX' ), 8 ) > 0;
+    p_cfh.utf8 := bitand( g_hex( utl_raw.substr( l_buf, 10, 1 ) ), 8 ) > 0;
     if p_cfh.n > 0
     then
       p_cfh.name1 := dbms_lob.substr( p_zip, least( p_cfh.n, 32767 ), p_ind + 46 );
@@ -5137,9 +7366,11 @@ $END
   end;
   --
   function load_font
-    ( p_font   blob
-    , p_embed  boolean
-    , p_offset number
+    ( p_font              blob
+    , p_embed             boolean
+    , p_subset            boolean
+    , p_offset            number
+    , p_opentype_features boolean
     )
   return pls_integer
   is
@@ -5157,15 +7388,19 @@ $END
     l_cnt   pls_integer;
     l_idx   pls_integer;
     l_len   pls_integer;
+    l_width pls_integer;
+    l_glyph pls_integer;
+    l_end   integer;
     l_max   integer;
     l_tmp   integer;
+    l_offs  integer;
     l_start integer;
     --
     function substr2num( p_idx pls_integer )
     return integer
     is
     begin
-      return to_number( substr( l_buf, p_idx, 4 ), 'XXXX' );
+      return uint16( substr( l_buf, p_idx, 4 ) );
     end;
     --
     function substr2snum( p_idx pls_integer )
@@ -5175,13 +7410,1579 @@ $END
     begin
       return case when l_tmp > 32767 then l_tmp - 65536 else l_tmp end;
     end;
+    --
+    function parse_script_list( p_offs integer )
+    return tp_script_list
+    is
+      l_sz     pls_integer;
+      l_done   pls_integer;
+      l_to_do  pls_integer;
+      l_b_cnt  pls_integer;
+      l_script tp_script;
+      l_list   tp_script_list;
+      --
+      function parse_lang_sys_table( p_offs integer )
+      return tp_pls_tab
+      is
+        l_sz      pls_integer;
+        l_done    pls_integer;
+        l_to_do   pls_integer;
+        l_b_cnt   pls_integer;
+        l_buf     varchar2(32767);
+        l_indices tp_pls_tab;
+      begin
+        l_buf := dbms_lob.substr( p_font, 6, p_offs );
+        if substr( l_buf, 5, 4 ) != 'FFFF'
+        then
+          l_indices( 0 ) := uint16( substr( l_buf, 5, 4 ) );  -- requiredFeatureIndex
+        else
+          l_indices( 0 ) := null;
+        end if;
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( substr( l_buf, 9, 4 ) );
+        for i in 1 .. l_to_do
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_indices( i ) := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+          l_done := l_done + 1;
+        end loop;
+        return l_indices;
+      end parse_lang_sys_table;
+      --
+      function parse_script_table( p_offs integer )
+      return tp_script_table
+      is
+        l_sz           pls_integer;
+        l_done         pls_integer;
+        l_to_do        pls_integer;
+        l_b_cnt        pls_integer;
+        l_buf          varchar2(32767);
+        l_lang_sys     tp_lang_sys;
+        l_script_table tp_script_table;
+      begin
+        l_buf := dbms_lob.substr( p_font, 4, p_offs );
+        if substr( l_buf, 1, 4 ) != '0000'
+        then
+          l_lang_sys.feature_indices := parse_lang_sys_table( p_offs + uint16( substr( l_buf, 1, 4 ) ) );
+        end if;
+        l_script_table( 0 ) := l_lang_sys;  -- defaultLangSys
+        l_lang_sys.feature_indices.delete;
+        --
+        l_sz := 2700;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( substr( l_buf, 5, 4 ) );
+        for i in 1 .. l_to_do
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 6 * least( l_sz, l_to_do ), p_offs + 4 + l_b_cnt * 6 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_lang_sys.feature_indices := parse_lang_sys_table( p_offs + uint16( substr( l_buf, 9 + 12 * l_done, 4 ) ) );
+          l_lang_sys.tag := utl_raw.cast_to_varchar2( substr( l_buf, 1 + 12 * l_done, 8 ) );
+          l_done := l_done + 1;
+          l_script_table( i ) := l_lang_sys;
+          l_lang_sys.feature_indices.delete;
+        end loop;
+        return l_script_table;
+      end parse_script_table;
+      --
+    begin
+      l_sz := 2700;
+      l_done := l_sz;
+      l_b_cnt := 0;
+      l_to_do := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs ) ) );
+      for i in 1 .. l_to_do
+      loop
+        if l_done = l_sz
+        then
+          l_buf := dbms_lob.substr( p_font, 6 * least( l_sz, l_to_do ), p_offs + 2 + l_b_cnt * 6 * l_sz );
+          l_done := 0;
+          l_b_cnt := l_b_cnt + 1;
+          l_to_do := l_to_do - l_sz;
+        end if;
+        l_script.script_table := parse_script_table( p_offs + substr2num( 9 + 12 * l_done ) );
+        l_script.tag := utl_raw.cast_to_varchar2( substr( l_buf, 1 + 12 * l_done, 8 ) );
+        l_list( i ) := l_script;
+        l_done := l_done + 1;
+      end loop;
+      return l_list;
+    end parse_script_list;
+    --
+    function parse_coverage( p_offs integer )
+    return tp_pls_tab
+    is
+      l_sz    pls_integer;
+      l_done  pls_integer;
+      l_to_do pls_integer;
+      l_b_cnt pls_integer;
+      l_cnt   pls_integer;
+      l_glyph pls_integer;
+      l_buf   varchar2(32767);
+      l_rv    tp_pls_tab;
+      l_tmp   tp_pls_tab;
+    begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#coverage-table
+      l_buf := dbms_lob.substr( p_font, 4, p_offs );
+      l_to_do := uint16( substr( l_buf, 5, 4 ) );
+      if substr( l_buf, 1, 4 ) = '0001'
+      then
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        for i in 0 .. l_to_do - 1  -- zero-based
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 4 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_tmp( uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) ) := i;
+          l_done := l_done + 1;
+        end loop;
+      elsif substr( l_buf, 1, 4 ) = '0002'
+      then
+        l_cnt := 0;
+        l_sz := 2700;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        for i in 1 .. l_to_do
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 6 * least( l_sz, l_to_do ), p_offs + 4 + l_b_cnt * 6 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          for j in uint16( substr( l_buf, 1 + 12 * l_done, 4 ) ) .. uint16( substr( l_buf, 5 + 12 * l_done, 4 ) )
+          loop
+             l_tmp( j ) := l_cnt;
+             l_cnt := l_cnt + 1;
+          end loop;
+          l_done := l_done + 1;
+        end loop;
+      end if;
+      l_glyph := l_tmp.first;
+      while l_glyph is not null
+      loop
+        l_rv( l_tmp( l_glyph ) ) := l_glyph;
+        l_glyph := l_tmp.next( l_glyph );
+      end loop;
+      return l_rv;
+    end parse_coverage;
+    --
+    function parse_feature_list( p_offs integer )
+    return tp_feature_list
+    is
+      l_sz      pls_integer;
+      l_done    pls_integer;
+      l_to_do   pls_integer;
+      l_b_cnt   pls_integer;
+      l_feature tp_feature;
+      l_list    tp_feature_list;
+      --
+      function parse_feature_table( p_offs integer )
+      return tp_pls_tab
+      is
+        l_sz      pls_integer;
+        l_done    pls_integer;
+        l_to_do   pls_integer;
+        l_b_cnt   pls_integer;
+        l_buf     varchar2(32767);
+        l_lookups tp_pls_tab;
+      begin
+        l_buf := dbms_lob.substr( p_font, 4, p_offs );
+        -- don't handle featureParams
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( substr( l_buf, 5, 4 ) );
+        for i in 1 .. l_to_do
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 4 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_lookups( i ) := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+          l_done := l_done + 1;
+        end loop;
+        return l_lookups;
+      end parse_feature_table;
+      --
+    begin
+      l_sz := 2700;
+      l_done := l_sz;
+      l_b_cnt := 0;
+      l_to_do := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs ) ) );
+      for i in 0 .. l_to_do - 1  -- zero-based
+      loop
+        if l_done = l_sz
+        then
+          l_buf := dbms_lob.substr( p_font, 6 * least( l_sz, l_to_do ), p_offs + 2 + l_b_cnt * 6 * l_sz );
+          l_done := 0;
+          l_b_cnt := l_b_cnt + 1;
+          l_to_do := l_to_do - l_sz;
+        end if;
+        l_feature.lookups := parse_feature_table( p_offs + substr2num( 9 + 12 * l_done ) );
+        l_feature.tag := utl_raw.cast_to_varchar2( substr( l_buf, 1 + 12 * l_done, 8 ) );
+        l_list( i ) := l_feature;
+        l_done := l_done + 1;
+      end loop;
+      return l_list;
+    end parse_feature_list;
+    --
+    function parse_class_def( p_offs integer )
+    return tp_pls_tab
+    is
+      l_class  pls_integer;
+      l_start  pls_integer;
+      l_sz     pls_integer;
+      l_done   pls_integer;
+      l_to_do  pls_integer;
+      l_b_cnt  pls_integer;
+      l_buf    varchar2(32767);
+      l_rv     tp_pls_tab;
+    begin
+      -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#classDefTbl
+      l_buf := dbms_lob.substr( p_font, 6, p_offs );
+      if substr( l_buf, 1, 4 ) = '0001'
+      then
+        l_start := uint16( substr( l_buf, 5, 4 ) );
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( substr( l_buf, 9, 4 ) );
+        for i in 0 .. l_to_do - 1
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_rv( l_start + i ) := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+          l_done := l_done + 1;
+        end loop;
+      elsif substr( l_buf, 1, 4 ) = '0002'
+      then
+        l_sz := 2700;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( substr( l_buf, 5, 4 ) );
+        for i in 1 .. l_to_do
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 6 * least( l_sz, l_to_do ), p_offs + 4 + l_b_cnt * 6 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_class := uint16( substr( l_buf, 9 + 12 * l_done, 4 ) );
+          for j in uint16( substr( l_buf, 1 + 12 * l_done, 4 ) ) .. uint16( substr( l_buf, 5 + 12 * l_done, 4 ) )
+          loop
+            l_rv( j ) := l_class;
+          end loop;
+          l_done := l_done + 1;
+        end loop;
+      end if;
+      return l_rv;
+    end parse_class_def;
+    --
+    procedure parse_gsub( p_font_idx pls_integer, p_offset integer )
+    is
+      l_header varchar2(32);
+      l_gsub   tp_gsub_gpos;
+      --
+      procedure parse_lookup_list( p_offs integer )
+      is
+        l_sz          pls_integer;
+        l_done        pls_integer;
+        l_to_do       pls_integer;
+        l_b_cnt       pls_integer;
+        l_lookup      tp_lookup;
+        l_null_lookup tp_lookup;
+        --
+        procedure parse_lookup_type1( p_idx pls_integer, p_offs integer )
+        is
+          l_buf      varchar2(32767);
+          l_diff     pls_integer;
+          l_glyph    pls_integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_b_cnt    pls_integer;
+          l_coverage tp_pls_tab;
+          l_subtable tp_subtable;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-1-subtable-single-substitution
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          if substr( l_buf, 1, 4 ) = '0001'
+          then
+            l_diff := int16( substr( l_buf, 9, 4 ) );
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := l_glyph + l_diff;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+            end loop;
+          else
+            l_sz := 8100;
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := uint16( substr( l_buf, 9, 4 ) );
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+              l_done := l_done + 1;
+            end loop;
+          end if;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type1;
+        --
+        procedure parse_lookup_type2( p_idx pls_integer, p_offs integer )
+        is
+          l_buf      varchar2(32767);
+          l_glyph    pls_integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_b_cnt    pls_integer;
+          l_coverage tp_pls_tab;
+          l_subtable tp_subtable;
+          --
+          procedure parse_sequence_table( p_offs integer )
+          is
+            l_buf varchar2(32767);
+            l_cnt pls_integer;
+          begin
+            l_buf := dbms_lob.substr( p_font, 2, p_offs );
+            l_cnt := uint16( substr( l_buf, 1, 4 ) );
+            l_buf := dbms_lob.substr( p_font, 2 * l_cnt, p_offs + 2 );
+            for i in 1 .. l_cnt
+            loop
+              l_subtable.matrix( l_glyph )( i ) := uint16( substr( l_buf, -3 + i * 4, 4 ) );
+            end loop;
+          end parse_sequence_table;
+          --
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-2-subtable-multiple-substitution
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          l_sz := 8100;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          l_to_do := uint16( substr( l_buf, 9, 4 ) );
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            l_subtable.coverage( l_glyph ) := null;
+            l_lookup.coverage( l_glyph )( p_idx ) := null;
+            parse_sequence_table( p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+            l_done := l_done + 1;
+          end loop;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type2;
+        --
+        procedure parse_lookup_type4( p_idx pls_integer, p_offs integer )
+        is
+          l_buf      varchar2(32767);
+          l_diff     pls_integer;
+          l_glyph    pls_integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_b_cnt    pls_integer;
+          l_coverage tp_pls_tab;
+          l_subtable tp_subtable;
+          --
+          procedure parse_ligature( p_offs integer, p_idx pls_integer )
+          is
+            l_buf  varchar2(32767);
+            l_cnt  pls_integer;
+            l_liga pls_integer;
+          begin
+            l_buf := dbms_lob.substr( p_font, 4, p_offs );
+            l_cnt := uint16( substr( l_buf, 5, 4 ) ) - 1;
+            l_liga := uint16( substr( l_buf, 1, 4 ) );
+            l_subtable.matrix( l_glyph )( p_idx * 20 ) := l_cnt;
+            l_subtable.matrix( l_glyph )( p_idx * 20 + 1 ) := l_liga;
+            l_buf := dbms_lob.substr( p_font, 2 * l_cnt, p_offs + 4 );
+            for i in 0 .. l_cnt - 1
+            loop
+              l_subtable.matrix( l_glyph )( p_idx * 20 + 2 + i ) := uint16( substr( l_buf, 1 + i * 4, 4 ) );
+            end loop;
+          end parse_ligature;
+          --
+          procedure parse_ligature_set_table( p_offs integer )
+          is
+            l_buf varchar2(32767);
+            l_cnt pls_integer;
+          begin
+            l_cnt := uint16( dbms_lob.substr( p_font, 2, p_offs ) );
+            l_subtable.matrix( l_glyph )( 0 ) := l_cnt;
+            l_buf := dbms_lob.substr( p_font, 2 * l_cnt, p_offs + 2 );
+            for i in 0 .. l_cnt - 1
+            loop
+              parse_ligature( p_offs + uint16( substr( l_buf, 1 + i * 4, 4 ) ), i + 1);
+            end loop;
+          end parse_ligature_set_table;
+          --
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-4-subtable-ligature-substitution
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          l_sz := 8100;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          l_to_do := uint16( substr( l_buf, 9, 4 ) );
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            l_subtable.coverage( l_glyph ) := null;
+            l_lookup.coverage( l_glyph )( p_idx ) := null;
+            parse_ligature_set_table( p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+            l_done := l_done + 1;
+          end loop;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type4;
+        --
+        procedure parse_lookup_type5( p_idx pls_integer, p_offs integer )
+        is
+          l_buf        varchar2(32767);
+          l_offs       pls_integer;
+          l_to_do      pls_integer;
+          l_glyph      pls_integer;
+          l_seq_lu_cnt pls_integer;
+          l_class      tp_pls_tab;
+          l_coverage   tp_pls_tab;
+          l_subtable   tp_subtable;
+          --
+          procedure parse_seq_lookup( p_buf   varchar2
+                                    , p_bias  pls_integer
+                                    , p_to_do pls_integer
+                                    )
+          is
+          begin
+            l_subtable.matrix( l_glyph )( p_bias ) := p_to_do;
+            for i in 0 .. p_to_do - 1
+            loop
+              l_subtable.matrix( l_glyph )( p_bias + 1 + 2 * i ) := uint16( substr( p_buf, 1 + i * 8, 4 ) );
+              l_subtable.matrix( l_glyph )( p_bias + 2 + 2 * i ) := uint16( substr( p_buf, 5 + i * 8, 4 ) );
+            end loop;
+          end parse_seq_lookup;
+          --
+          procedure parse_seq_rule( p_idx pls_integer, p_offs integer )
+          is
+            l_buf        varchar2(32767);
+            l_sz         pls_integer;
+            l_seq_lu_cnt pls_integer;
+            l_to_do      pls_integer;
+            l_bias       constant pls_integer := 100 * p_idx;
+          begin
+            l_sz := 15;
+            l_buf := dbms_lob.substr( p_font, 2 * l_sz, p_offs );
+            l_seq_lu_cnt := uint16( substr( l_buf, 5, 4 ) );
+            l_to_do := uint16( substr( l_buf, 1, 4 ) ) - 1;
+            l_buf := substr( l_buf, 9 );
+            if 2 + l_to_do + 2 * l_tmp > l_sz
+            then
+              l_buf := l_buf || dbms_lob.substr( p_font, 2 * ( 2 + l_to_do + 2 * l_tmp - l_sz ), p_offs + 2 * l_sz );
+            end if;
+            l_subtable.matrix( l_glyph )( l_bias + 20 ) := l_to_do;
+            for i in 0 .. l_to_do - 1
+            loop
+              l_subtable.matrix( l_glyph )( l_bias + 21 + i ) := uint16( substr( l_buf, 1 + i * 4, 4 ) );
+            end loop;
+            parse_seq_lookup( substr( l_buf, 1 + 4 * l_to_do ), l_bias + 80, l_seq_lu_cnt );
+          end parse_seq_rule;
+          --
+          procedure parse_seq_rule_set( p_offs integer )
+          is
+            l_buf   varchar2(32767);
+            l_to_do pls_integer;
+          begin
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs ) );
+            l_subtable.matrix( l_glyph )( 0 ) := l_to_do;
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do, p_offs + 2 );
+            for i in 0 .. l_to_do - 1
+            loop
+              parse_seq_rule( i + 1, p_offs + uint16( substr( l_buf, 1 + 4 * i, 4 ) ) );
+            end loop;
+          end parse_seq_rule_set;
+          --
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-5-subtable-contextual-substitution
+          l_buf := dbms_lob.substr( p_font, 8, p_offs );
+          l_subtable.data_list( 0 ) := substr( l_buf, 4, 1 );
+          if substr( l_buf, 4, 1 ) = '1'
+          then
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-1-simple-glyph-contexts
+            l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+            l_to_do := least( uint16( substr( l_buf, 9, 4 ) ), l_coverage.count );
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do, p_offs + 6 );
+            for i in 0 .. l_to_do - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := null;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+              l_offs := uint16( substr( l_buf, 1 + 4 * i, 4 ) );
+              if l_offs > 0
+              then
+                parse_seq_rule_set( p_offs + l_offs );
+              else
+                l_subtable.matrix( l_glyph )( 0 ) := 0;
+              end if;
+            end loop;
+          elsif substr( l_buf, 4, 1 ) = '2'
+          then
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-2-class-based-glyph-contexts
+            l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+            l_class := parse_class_def( p_offs + uint16( substr( l_buf, 9, 4 ) ) );
+            l_to_do := uint16( substr( l_buf, 13, 4 ) );
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := l_class( l_glyph );
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+            end loop;
+            l_glyph := l_class.first;
+            while l_glyph is not null
+            loop
+              l_subtable.matrix( - l_glyph )( 1 ) := l_class( l_glyph );
+              l_glyph := l_class.next( l_glyph );
+            end loop;
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do, p_offs + 8 );
+            for i in 0 .. l_to_do - 1
+            loop
+              l_glyph := i + 1; -- = class
+              l_offs := uint16( substr( l_buf, 1 + 4 * i, 4 ) );
+              if l_offs > 0
+              then
+                parse_seq_rule_set( p_offs + l_offs );
+              else
+                l_subtable.matrix( l_glyph )( 0 ) := 0;
+              end if;
+            end loop;
+          else
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-3-coverage-based-glyph-contexts
+            l_to_do := uint16( substr( l_buf, 5, 4 ) );
+            l_seq_lu_cnt := uint16( substr( l_buf, 9, 4 ) );
+            l_subtable.data_list( 1 ) := l_to_do;
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do + 4 * l_seq_lu_cnt, p_offs + 6 );
+            for j in 0 .. l_to_do - 1
+            loop
+              l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 1 + j * 4, 4 ) ) );
+              for i in 0 .. l_coverage.count - 1
+              loop
+                l_glyph := l_coverage( i );
+                if j = 0
+                then
+                  l_subtable.coverage( l_glyph ) := null;
+                  l_lookup.coverage( l_glyph )( p_idx ) := null;
+                else
+                  l_subtable.matrix( - j )( l_glyph ) := null;
+                end if;
+              end loop;
+            end loop;
+            l_glyph := 1;
+            parse_seq_lookup( substr( l_buf, 1 + 4 * l_to_do ), 0, l_seq_lu_cnt );
+          end if;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type5;
+        --
+        procedure parse_lookup_type6( p_idx pls_integer, p_offs integer )
+        is
+          l_buf       varchar2(32767);
+          l_offs      pls_integer;
+          l_sz        pls_integer;
+          l_done      pls_integer;
+          l_to_do     pls_integer;
+          l_b_cnt     pls_integer;
+          l_glyph     pls_integer;
+          l_cnt       pls_integer;
+          l_ind       pls_integer;
+          l_coverage  tp_pls_tab;
+          l_bt_class  tp_pls_tab;
+          l_inp_class tp_pls_tab;
+          l_lah_class tp_pls_tab;
+          l_subtable  tp_subtable;
+          --
+          procedure parse_seq_lookup( p_offs  integer
+                                    , p_glyph pls_integer
+                                    , p_bias  pls_integer
+                                    , p_to_do pls_integer
+                                    )
+          is
+            l_buf   varchar2(32767);
+            l_sz    pls_integer;
+            l_done  pls_integer;
+            l_to_do pls_integer;
+            l_b_cnt pls_integer;
+          begin
+            l_subtable.matrix( p_glyph )( p_bias ) := p_to_do;
+            l_sz := 10;
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := p_to_do;
+            for i in 0 .. p_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 4 * least( l_sz, l_to_do ), p_offs + l_b_cnt * 4 * l_sz );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_subtable.matrix( p_glyph )( p_bias + 1 + 2 * i ) := uint16( substr( l_buf, 1 + 8 * l_done, 4 ) );
+              l_subtable.matrix( p_glyph )( p_bias + 2 + 2 * i ) := uint16( substr( l_buf, 5 + 8 * l_done, 4 ) );
+              l_done := l_done + 1;
+            end loop;
+          end parse_seq_lookup;
+          --
+          procedure parse_chained_seq_rule( p_idx pls_integer, p_offs integer )
+          is
+            l_buf   varchar2(32767);
+            l_sz    pls_integer;
+            l_done  pls_integer;
+            l_to_do pls_integer;
+            l_tmp   pls_integer;
+            l_what  pls_integer;
+            l_cnt   pls_integer;
+            l_pos   pls_integer;
+            l_bias  constant pls_integer := 100 * p_idx;
+          begin
+            l_sz := 40;
+            l_done := l_sz;
+            l_what := 0;
+            l_to_do := 0;
+            l_pos := 1;
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * l_sz, p_offs );
+                l_done := 0;
+              end if;
+              if l_to_do <= 0
+              then
+                exit when l_what = 4;
+                l_what := l_what + 1;
+                l_to_do := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+                if l_what = 2
+                then
+                  l_to_do := l_to_do - 1;
+                elsif l_what = 4
+                then
+                  parse_seq_lookup( p_offs + 2 * l_pos, l_glyph, l_bias + 80, l_to_do );
+                  exit;
+                  l_to_do := 2 * l_to_do;
+                end if;
+                l_tmp := l_to_do;
+                l_subtable.matrix( l_glyph )( l_bias + 20 * l_what ) := l_tmp;
+              else
+                l_to_do := l_to_do - 1;
+                l_subtable.matrix( l_glyph )( l_bias + 20 * l_what + l_tmp - l_to_do ) := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+              end if;
+              l_pos := l_pos + 1;
+              l_done := l_done + 1;
+            end loop;
+          end parse_chained_seq_rule;
+          --
+          procedure parse_chained_seq_rule_set( p_offs integer )
+          is
+            l_buf   varchar2(32767);
+            l_to_do pls_integer;
+          begin
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs ) );
+            l_subtable.matrix( l_glyph )( 0 ) := l_to_do;
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do, p_offs + 2 );
+            for i in 0 .. l_to_do - 1
+            loop
+              parse_chained_seq_rule( i + 1, p_offs + uint16( substr( l_buf, 1 + 4 * i, 4 ) ) );
+            end loop;
+          end parse_chained_seq_rule_set;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-6-subtable-chained-contexts-substitution
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_subtable.data_list( 0 ) := substr( l_buf, 4, 1 );
+          if substr( l_buf, 1, 4 ) = '0001'
+          then
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt1
+            l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+            l_sz := 8100;
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := least( uint16( substr( l_buf, 9, 4 ) ), l_coverage.count );
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := null;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+              l_offs := uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+              if l_offs > 0
+              then
+                parse_chained_seq_rule_set( p_offs + l_offs );
+              else
+                l_subtable.matrix( l_glyph )( 0 ) := 0;
+              end if;
+              l_done := l_done + 1;
+            end loop;
+          elsif substr( l_buf, 1, 4 ) = '0003'
+          then
+-- -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt3
+            l_offs := 2;
+            l_sz := 8100;
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs + l_offs ) );
+            l_subtable.data_list( 1 ) := l_to_do;
+            l_offs := l_offs + 2;
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + l_offs );
+                l_offs := l_offs + 2 * least( l_sz, l_to_do );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              for j in 0 .. l_coverage.count - 1
+              loop
+                l_subtable.matrix( i + 1 )( l_coverage( j ) ) := null;
+              end loop;
+              l_done := l_done + 1;
+            end loop;
+            --
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs + l_offs ) );
+            l_subtable.data_list( 2 ) := l_to_do;
+            l_offs := l_offs + 2;
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + l_offs );
+                l_offs := l_offs + 2 * least( l_sz, l_to_do );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              for j in 0 .. l_coverage.count - 1
+              loop
+                l_glyph := l_coverage( j );
+                if i = 0
+                then
+                  l_subtable.coverage( l_glyph ) := null;
+                  l_lookup.coverage( l_glyph )( p_idx ) := null;
+                else
+                  l_subtable.matrix( 100 + i )( l_coverage( j ) ) := null;
+                end if;
+              end loop;
+              l_done := l_done + 1;
+            end loop;
+            --
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs + l_offs ) );
+            l_subtable.data_list( 3 ) := l_to_do;
+            l_offs := l_offs + 2;
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + l_offs );
+                l_offs := l_offs + 2 * least( l_sz, l_to_do );
+                l_done := 0;
+                l_b_cnt := l_b_cnt + 1;
+                l_to_do := l_to_do - l_sz;
+              end if;
+              l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              for j in 0 .. l_coverage.count - 1
+              loop
+                l_subtable.matrix( - i - 1 )( l_coverage( j ) ) := null;
+              end loop;
+              l_done := l_done + 1;
+            end loop;
+            --
+            l_done := l_sz;
+            l_b_cnt := 0;
+            l_to_do := uint16( dbms_lob.substr( p_font, 2, p_offs + l_offs ) );
+            l_offs := l_offs + 2;
+            parse_seq_lookup( p_offs + l_offs, 0, 0, l_to_do );
+          else
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt2
+            l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+            l_buf := dbms_lob.substr( p_font, 8, p_offs + 4 );
+            l_bt_class := parse_class_def( p_offs + uint16( substr( l_buf, 1, 4 ) ) );
+            l_subtable.data_list( 1 ) := l_bt_class.count;
+            l_inp_class := parse_class_def( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+            l_subtable.data_list( 2 ) := l_inp_class.count;
+            l_lah_class := parse_class_def( p_offs + uint16( substr( l_buf, 9, 4 ) ) );
+            l_subtable.data_list( 3 ) := l_lah_class.count;
+            l_to_do := uint16( substr( l_buf, 13, 4 ) );
+            l_subtable.data_list( 4 ) := l_to_do;
+            l_glyph := l_bt_class.first;
+            while l_glyph is not null
+            loop
+              l_subtable.matrix( - l_glyph )( 1 ) := l_bt_class( l_glyph );
+              l_glyph := l_bt_class.next( l_glyph );
+            end loop;
+            l_glyph := l_lah_class.first;
+            while l_glyph is not null
+            loop
+              l_subtable.matrix( - l_glyph )( 3 ) := l_lah_class( l_glyph );
+              l_glyph := l_lah_class.next( l_glyph );
+            end loop;
+            l_glyph := l_inp_class.first;
+            while l_glyph is not null
+            loop
+              l_subtable.matrix( - l_glyph )( 2 ) := l_inp_class( l_glyph );
+              l_glyph := l_inp_class.next( l_glyph );
+            end loop;
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subtable.coverage( l_glyph ) := l_inp_class( l_glyph );
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+            end loop;
+            --
+            l_buf := dbms_lob.substr( p_font, 2 * l_to_do, p_offs + 12 );
+            for i in 0 .. l_to_do - 1
+            loop
+              l_glyph := i; -- = class
+              l_offs := uint16( substr( l_buf, 1 + i * 4, 4 ) );
+              if l_offs > 0
+              then
+                parse_chained_seq_rule_set( p_offs + l_offs );
+              else
+                l_subtable.matrix( l_glyph )( 0 ) := 0;
+              end if;
+            end loop;
+          end if;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type6;
+        --
+        procedure parse_lookup_type7( p_idx pls_integer, p_offs integer )
+        is
+          l_buf varchar2(16);
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookup-type-7-subtable-substitution-subtable-extension
+          l_buf := dbms_lob.substr( p_font, 8, p_offs );
+          case substr( l_buf, 5, 4 )
+            when '0001' then parse_lookup_type1( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0002' then parse_lookup_type2( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0004' then parse_lookup_type4( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0005' then parse_lookup_type5( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0006' then parse_lookup_type6( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            else null;
+          end case;
+        end parse_lookup_type7;
+        --
+        function parse_lookup_table( p_offs integer )
+        return tp_lookup
+        is
+          l_sz    pls_integer;
+          l_done  pls_integer;
+          l_to_do pls_integer;
+          l_b_cnt pls_integer;
+          l_buf   varchar2(32767);
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table
+          l_lookup := l_null_lookup;
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_lookup.lookup_type := uint16( substr( l_buf, 1, 4 ) );
+          l_lookup.lookup_flags := uint16( substr( l_buf, 5, 4 ) );
+          l_sz := 8100;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          l_to_do := uint16( substr( l_buf, 9, 4 ) );
+          if bitand( l_lookup.lookup_flags, 16 ) > 0
+          then
+            l_lookup.mark_filtering_set := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs + 6 + 2 * l_to_do ) ) );
+          end if;
+          for i in 1 .. l_to_do
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            case l_lookup.lookup_type
+              when 1 then parse_lookup_type1( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 2 then parse_lookup_type2( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 4 then parse_lookup_type4( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 5 then parse_lookup_type5( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 6 then parse_lookup_type6( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 7 then parse_lookup_type7( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+else null;
+            end case;
+            l_done := l_done + 1;
+          end loop;
+          return l_lookup;
+        end parse_lookup_table;
+      begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookuplist-table
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs ) ) );
+        for i in 0 .. l_to_do - 1  -- zero-based
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 2 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_gsub.lookup_list( i ) := parse_lookup_table( p_offs + substr2num( 1 + 4 * l_done ) );
+          l_done := l_done + 1;
+        end loop;
+      end parse_lookup_list;
+    begin
+      l_header := dbms_lob.substr( p_font, 14, p_offset );
+      l_gsub.table_type := 'GSUB';
+      -- ScriptList table
+      l_gsub.script_list := parse_script_list( p_offset + uint16( substr( l_header, 9, 4 ) ) );
+      -- FeatureList table
+      l_gsub.feature_list := parse_feature_list( p_offset + to_number( substr( l_header, 13, 4 ), 'XXXX' ) );
+      -- LookupList table
+      parse_lookup_list( p_offset + uint16( substr( l_header, 17, 4 ) ) );
+      g_pdf.gsub_gpos( p_font_idx ) := l_gsub;
+    end parse_gsub;
+    --
+    function parse_anchor( p_offs integer )
+    return tp_anchor
+    is
+      l_buf    varchar2(32767);
+      l_anchor tp_anchor;
+    begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#anchor-table
+      l_buf := dbms_lob.substr( p_font, 6, p_offs );
+      l_anchor.xCoordinate := int16( substr( l_buf, 5, 4 ) );
+      l_anchor.yCoordinate := int16( substr( l_buf, 9, 4 ) );
+      return l_anchor;
+    end parse_anchor;
+    --
+    procedure parse_gpos( p_font_idx pls_integer, p_offset integer )
+    is
+      l_header varchar2(32);
+      l_gpos   tp_gsub_gpos;
+      --
+      procedure parse_lookup_list( p_offs integer )
+      is
+        l_sz          pls_integer;
+        l_done        pls_integer;
+        l_to_do       pls_integer;
+        l_b_cnt       pls_integer;
+        l_lookup      tp_lookup;
+        l_null_lookup tp_lookup;
+        --
+        procedure parse_lookup_type1( p_idx pls_integer, p_offs integer )
+        is
+          l_buf      varchar2(32767);
+          l_pv_buf   varchar2(32767);
+          l_pv_offs  integer;
+          l_pv_sz    pls_integer;
+          l_pv_done  pls_integer;
+          l_glyph    pls_integer;
+          l_format   pls_integer;
+          l_coverage tp_pls_tab;
+          l_subt     tp_subtable;
+          --
+          function parse_value_record
+          return tp_value_record
+          is
+            l_flag pls_integer := 1;
+            l_vr tp_value_record;
+          begin
+            if l_format > 0
+            then
+              for i in 1 .. 8
+              loop
+                if bitand( l_format, l_flag ) > 0
+                then
+                  if l_pv_done = l_pv_sz
+                  then
+                    l_pv_buf := dbms_lob.substr( p_font, 2 * l_pv_sz, l_pv_offs );
+                    l_pv_done := 0;
+                    l_pv_offs := l_pv_offs + 2 * l_pv_sz;
+                  end if;
+                  case i
+                    when 1 then l_vr.xPlacement := int16( substr( l_pv_buf, 1 + 4 * l_pv_done, 4 ) );
+                    when 2 then l_vr.yPlacement := int16( substr( l_pv_buf, 1 + 4 * l_pv_done, 4 ) );
+                    when 3 then l_vr.xAdvance := int16( substr( l_pv_buf, 1 + 4 * l_pv_done, 4 ) );
+                    when 4 then l_vr.yAdvance := int16( substr( l_pv_buf, 1 + 4 * l_pv_done, 4 ) );
+                    else null;
+                  end case;
+                  l_pv_done := l_pv_done + 1;
+                end if;
+                l_flag := l_flag * 2;
+              end loop;
+            end if;
+            return l_vr;
+          end parse_value_record;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-1-subtable-single-adjustment-positioning
+          l_buf := dbms_lob.substr( p_font, 16, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          l_format := uint16( substr( l_buf, 9, 4 ) );
+          if substr( l_buf, 1, 4 ) = '0001'
+          then
+            l_pv_offs := p_offs + 6;
+            l_pv_sz := 4;
+            l_pv_done := l_pv_sz;
+            l_subt.value_records_list( 0 )( 0 ) := parse_value_record;
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subt.coverage( l_glyph ) := null;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+            end loop;
+          else
+            l_pv_offs := p_offs + 8;
+            l_pv_sz := 400;
+            l_pv_done := l_pv_sz;
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_subt.coverage( l_glyph ) := i;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+              l_subt.value_records_list( i )( 0 ) := parse_value_record;
+            end loop;
+          end if;
+          l_lookup.subtables( p_idx ) := l_subt;
+        end parse_lookup_type1;
+        --
+        procedure parse_lookup_type2( p_idx pls_integer, p_offs integer )
+        is
+          l_offs     integer;
+          l_pv_offs  integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_pv_sz    pls_integer;
+          l_pv_done  pls_integer;
+          l_pv_to_do pls_integer;
+          l_glyph    pls_integer;
+          l_format1  pls_integer;
+          l_format2  pls_integer;
+          l_cl_cnt1  pls_integer;
+          l_cl_cnt2  pls_integer;
+          l_buf      varchar2(32767);
+          l_pv_recs  varchar2(32767);
+          l_coverage tp_pls_tab;
+          l_class1   tp_pls_tab;
+          l_vr       tp_value_record;
+          l_vrs      tp_value_records;
+          --
+          procedure read_buf_when_needed
+          is
+          begin
+            if l_pv_done = l_pv_sz
+            then
+              l_pv_recs := dbms_lob.substr( p_font, 2 * l_pv_sz, l_pv_offs );
+              l_pv_done := 0;
+              l_pv_offs := l_pv_offs + 2 * l_pv_sz;
+            end if;
+          end read_buf_when_needed;
+          --
+          function parse_value_record( p_format pls_integer )
+          return tp_value_record
+          is
+            l_flag pls_integer := 1;
+            l_vr tp_value_record;
+          begin
+            if p_format > 0
+            then
+              for i in 1 .. 8
+              loop
+                if bitand( p_format, l_flag ) > 0
+                then
+                  read_buf_when_needed;
+                  case i
+                    when 1 then l_vr.xPlacement := int16( substr( l_pv_recs, 1 + 4 * l_pv_done, 4 ) );
+                    when 2 then l_vr.yPlacement := int16( substr( l_pv_recs, 1 + 4 * l_pv_done, 4 ) );
+                    when 3 then l_vr.xAdvance := int16( substr( l_pv_recs, 1 + 4 * l_pv_done, 4 ) );
+                    when 4 then l_vr.yAdvance := int16( substr( l_pv_recs, 1 + 4 * l_pv_done, 4 ) );
+                    else null;
+                  end case;
+                  l_pv_done := l_pv_done + 1;
+                end if;
+                l_flag := l_flag * 2;
+              end loop;
+            end if;
+            return l_vr;
+          end parse_value_record;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-2-subtable-pair-adjustment-positioning
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#value-record
+          l_buf := dbms_lob.substr( p_font, 16, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          l_format1 := uint16( substr( l_buf, 9, 4 ) );
+          l_format2 := uint16( substr( l_buf, 13, 4 ) );
+          if substr( l_buf, 1, 4 ) = '0001'
+          then
+            l_sz := 8190;
+            l_done := l_sz;
+            l_to_do := uint16( substr( l_buf, 17, 4 ) );
+            l_offs := p_offs + 10;
+            for i in 0 .. l_to_do - 1
+            loop
+              if l_done = l_sz
+              then
+                l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), l_offs );
+                l_done := 0;
+                l_offs := l_offs + 2 * l_sz;
+              end if;
+              l_pv_offs := p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) );
+              l_pv_to_do := uint16( rawtohex( dbms_lob.substr( p_font, 2, l_pv_offs ) ) );
+              l_pv_offs := l_pv_offs + 2;
+              l_pv_sz := least( 4 * l_pv_to_do, 8190 );   -- 1 second glyph  + (mostly) 1 value record with 1 value
+              l_pv_done := l_pv_sz;
+              for j in 1 .. l_pv_to_do
+              loop
+                read_buf_when_needed;
+                l_glyph := uint16( substr( l_pv_recs, 1 + 4 * l_pv_done, 4 ) );
+                l_pv_done := l_pv_done + 1;
+                l_vr := parse_value_record( l_format1 );
+                if   l_vr.xAdvance != 0   or l_vr.yAdvance != 0
+                  or l_vr.xPlacement != 0 or l_vr.yPlacement != 0
+                then
+                  l_vrs( l_glyph ) := l_vr;
+                end if;
+                l_vr := parse_value_record( l_format2 );
+                if   l_vr.xAdvance != 0   or l_vr.yAdvance != 0
+                  or l_vr.xPlacement != 0 or l_vr.yPlacement != 0
+                then
+                  l_vrs( - l_glyph ) := l_vr;
+                end if;
+              end loop;
+              l_glyph := l_coverage( i );
+              l_lookup.subtables( p_idx ).coverage( l_glyph ) := null;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+              l_lookup.subtables( p_idx ).value_records_list( l_glyph ) := l_vrs;
+              l_done := l_done + 1;
+              l_vrs.delete;
+            end loop;
+          elsif substr( l_buf, 1, 4 ) = '0002'
+          then
+            l_class1 := parse_class_def( p_offs + uint16( substr( l_buf, 17, 4 ) ) );
+            l_lookup.subtables( p_idx ).data_list := parse_class_def( p_offs + uint16( substr( l_buf, 21, 4 ) ) );
+            l_cl_cnt1 := uint16( substr( l_buf, 25, 4 ) );
+            l_cl_cnt2 := uint16( substr( l_buf, 29, 4 ) );
+            l_pv_offs := p_offs + 16;
+            l_pv_sz := least( l_cl_cnt1 * l_cl_cnt2, 8190 );
+            l_pv_done := l_pv_sz;
+            for i in 0 .. l_cl_cnt1 - 1
+            loop
+              for j in 1 .. l_cl_cnt2  -- + 1 because class 0 has no negative
+              loop
+                l_vr := parse_value_record( l_format1 );
+                if   l_vr.xAdvance != 0   or l_vr.yAdvance != 0
+                  or l_vr.xPlacement != 0 or l_vr.yPlacement != 0
+                then
+                  l_vrs( j ) := l_vr;
+                end if;
+                l_vr := parse_value_record( l_format2 );
+                if   l_vr.xAdvance != 0   or l_vr.yAdvance != 0
+                  or l_vr.xPlacement != 0 or l_vr.yPlacement != 0
+                then
+                  l_vrs( - j ) := l_vr;
+                end if;
+              end loop;
+              l_lookup.subtables( p_idx ).value_records_list( i ) := l_vrs;
+              l_vrs.delete;
+            end loop;
+            --
+            for i in 0 .. l_coverage.count - 1
+            loop
+              l_glyph := l_coverage( i );
+              l_lookup.subtables( p_idx ).coverage( l_glyph ) := case when l_class1.exists( l_glyph ) then l_class1( l_glyph ) else 0 end;
+              l_lookup.coverage( l_glyph )( p_idx ) := null;
+            end loop;
+          end if;
+        end parse_lookup_type2;
+        --
+        procedure parse_lookup_type3( p_idx pls_integer, p_offs integer )
+        is
+          l_buf      varchar2(32767);
+          l_offs     integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_glyph    pls_integer;
+          l_anchor   tp_anchor;
+          l_subt     tp_subtable;
+          l_coverage tp_pls_tab;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-3-subtable-cursive-attachment-positioning
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_buf, 5, 4 ) ) );
+          l_offs := p_offs + 6;
+          l_sz := 4050;
+          l_done := l_sz;
+          for i in 0 .. l_coverage.count - 1
+          loop
+            l_glyph := l_coverage( i );
+            l_subt.coverage( l_glyph ) := null;
+            l_lookup.coverage( l_glyph )( p_idx ) := null;
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 4 * l_sz, l_offs );
+              l_offs := l_offs + 4 * l_sz;
+              l_done := 0;
+            end if;
+            if substr( l_buf, 1 + 8 * l_done, 4 ) != '0000'
+            then
+              l_anchor := parse_anchor( p_offs + uint16( substr( l_buf, 1 + 8 * l_done, 4 ) ) );
+              l_subt.matrix( l_glyph )( 0 ) := l_anchor.xCoordinate;
+              l_subt.matrix( l_glyph )( 1 ) := l_anchor.yCoordinate;
+            end if;
+            if substr( l_buf, 5 + 8 * l_done, 4 ) != '0000'
+            then
+              l_anchor := parse_anchor( p_offs + uint16( substr( l_buf, 5 + 8 * l_done, 4 ) ) );
+              l_subt.matrix( l_glyph )( 2 ) := l_anchor.xCoordinate;
+              l_subt.matrix( l_glyph )( 3 ) := l_anchor.yCoordinate;
+            end if;
+            l_done := l_done + 1;
+          end loop;
+          l_lookup.subtables( p_idx ) := l_subt;
+        end parse_lookup_type3;
+        --
+        procedure parse_lookup_mark_to( p_idx pls_integer, p_offs integer )
+        is
+          l_offs     integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_b_cnt    pls_integer;
+          l_cnt      pls_integer;
+          l_tmp      pls_integer;
+          l_glyph    pls_integer;
+          l_buf      varchar2(32767);
+          l_cmp_buf  varchar2(32767);
+          l_header   varchar2(24);
+          l_anchor   tp_anchor;
+          l_coverage tp_pls_tab;
+          l_subtable tp_subtable;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-4-subtable-mark-to-base-attachment-positioning
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-6-subtable-mark-to-mark-attachment-positioning
+          l_header := dbms_lob.substr( p_font, 12, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_header, 5, 4 ) ) );
+          l_to_do := l_coverage.count;
+          l_offs := p_offs + uint16( substr( l_header, 17, 4 ) );
+          l_sz := 4050;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 4 * least( l_sz, l_to_do ), l_offs + 2 + l_b_cnt * 4 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            l_anchor := parse_anchor( l_offs + uint16( substr( l_buf, 5 + 8 * l_done, 4 ) ) );
+            l_subtable.data_list( l_glyph ) := l_anchor.xCoordinate;
+            l_subtable.data_list( - l_glyph ) := l_anchor.yCoordinate;
+            l_subtable.coverage( l_glyph ) := uint16( substr( l_buf, 1 + 8 * l_done, 4 ) );
+            l_lookup.coverage( l_glyph )( p_idx ) := null;
+            l_done := l_done + 1;
+          end loop;
+          l_cnt := uint16( substr( l_header, 13, 4 ) );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_header, 9, 4 ) ) );
+          l_offs := p_offs + uint16( substr( l_header, 21, 4 ) );
+          l_to_do := l_coverage.count;
+          l_sz := 8100 / l_cnt;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * l_cnt * least( l_sz, l_to_do ), l_offs + 2 + l_b_cnt * 2 * l_cnt * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            for j in 0 .. l_cnt - 1
+            loop
+              l_anchor := parse_anchor( l_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              l_subtable.matrix( l_glyph )( j ) := l_anchor.xCoordinate;
+              l_subtable.matrix( - l_glyph )( j ) := l_anchor.yCoordinate;
+              l_done := l_done + 1;
+            end loop;
+          end loop;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_mark_to;
+        --
+        procedure parse_lookup_type5( p_idx pls_integer, p_offs integer )
+        is
+          l_offs     integer;
+          l_sz       pls_integer;
+          l_done     pls_integer;
+          l_to_do    pls_integer;
+          l_b_cnt    pls_integer;
+          l_cnt      pls_integer;
+          l_tmp      pls_integer;
+          l_glyph    pls_integer;
+          l_buf      varchar2(32767);
+          l_cmp_buf  varchar2(32767);
+          l_header   varchar2(24);
+          l_anchor   tp_anchor;
+          l_coverage tp_pls_tab;
+          l_subtable tp_subtable;
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-5-subtable-mark-to-ligature-attachment-positioning
+          l_header := dbms_lob.substr( p_font, 12, p_offs );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_header, 5, 4 ) ) );
+          l_to_do := l_coverage.count;
+          l_offs := p_offs + uint16( substr( l_header, 17, 4 ) );
+          l_sz := 4050;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 4 * least( l_sz, l_to_do ), l_offs + 2 + l_b_cnt * 4 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            l_anchor := parse_anchor( l_offs + uint16( substr( l_buf, 5 + 8 * l_done, 4 ) ) );
+            l_subtable.data_list( l_glyph ) := l_anchor.xCoordinate;
+            l_subtable.data_list( - l_glyph ) := l_anchor.yCoordinate;
+            l_subtable.coverage( l_glyph ) := uint16( substr( l_buf, 1 + 8 * l_done, 4 ) );
+            l_lookup.coverage( l_glyph )( p_idx ) := null;
+            l_done := l_done + 1;
+          end loop;
+          l_cnt := uint16( substr( l_header, 13, 4 ) );
+          l_coverage := parse_coverage( p_offs + uint16( substr( l_header, 9, 4 ) ) );
+          l_to_do := l_coverage.count;
+          l_offs := p_offs + uint16( substr( l_header, 21, 4 ) );
+          l_sz := 8100;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          for i in 0 .. l_to_do - 1
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), l_offs + 2 + l_b_cnt * 2 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            l_glyph := l_coverage( i );
+            l_subtable.coverage( l_glyph ) := null;
+            l_cmp_buf := dbms_lob.substr( p_font, 132, l_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+            for j in 0 .. uint16( substr( l_cmp_buf, 1, 4 ) ) - 1
+            loop
+              for c in 0 .. l_cnt - 1
+              loop
+                l_tmp := uint16( substr( l_cmp_buf, 5 + 4 * c + 4 * l_cnt * j, 4 ) );
+                if l_tmp > 0
+                then
+                  l_anchor := parse_anchor( l_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) + l_tmp );
+                else
+                  l_anchor := null;
+                end if;
+                -- only store last component
+                l_subtable.matrix( l_glyph )( c ) := l_anchor.xCoordinate;
+                l_subtable.matrix( - l_glyph )( c ) := l_anchor.yCoordinate;
+              end loop;
+            end loop;
+            l_done := l_done + 1;
+          end loop;
+          l_lookup.subtables( p_idx ) := l_subtable;
+        end parse_lookup_type5;
+        --
+        procedure parse_lookup_type8( p_idx pls_integer, p_offs integer )
+        is
+          l_buf   varchar2(32767);
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-8-subtable-chained-contexts-positioning
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt1
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt2
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt3
+-- https://stackoverflow.com/questions/55388207/opentype-gpos-lookuptype-8-skipping-marks
+          l_buf := dbms_lob.substr( p_font, 16, p_offs );
+        end parse_lookup_type8;
+        --
+        procedure parse_lookup_type9( p_idx pls_integer, p_offs integer )
+        is
+          l_buf varchar2(16);
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#lookup-type-9-subtable-positioning-subtable-extension
+          l_buf := dbms_lob.substr( p_font, 8, p_offs );
+          case substr( l_buf, 5, 4 )
+            when '0001' then parse_lookup_type1( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0002' then parse_lookup_type2( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0003' then parse_lookup_type3( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0004' then parse_lookup_mark_to( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0005' then parse_lookup_type5( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0006' then parse_lookup_mark_to( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            when '0008' then parse_lookup_type8( p_idx, p_offs + to_number( substr( l_buf, 9, 8 ), 'XXXXXXXX' ) );
+            else null;
+          end case;
+        end parse_lookup_type9;
+        --
+        function parse_lookup_table( p_offs integer )
+        return tp_lookup
+        is
+          l_sz    pls_integer;
+          l_done  pls_integer;
+          l_to_do pls_integer;
+          l_b_cnt pls_integer;
+          l_buf   varchar2(32767);
+        begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table
+          l_lookup := l_null_lookup;
+          l_buf := dbms_lob.substr( p_font, 6, p_offs );
+          l_lookup.lookup_type := uint16( substr( l_buf, 1, 4 ) );
+          l_lookup.lookup_flags := uint16( substr( l_buf, 5, 4 ) );
+          l_sz := 8100;
+          l_done := l_sz;
+          l_b_cnt := 0;
+          l_to_do := uint16( substr( l_buf, 9, 4 ) );
+          if bitand( l_lookup.lookup_flags, 16 ) > 0
+          then
+            l_lookup.mark_filtering_set := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs + 6 + 2 * l_to_do ) ) );
+          end if;
+          for i in 1 .. l_to_do
+          loop
+            if l_done = l_sz
+            then
+              l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 6 + l_b_cnt * 2 * l_sz );
+              l_done := 0;
+              l_b_cnt := l_b_cnt + 1;
+              l_to_do := l_to_do - l_sz;
+            end if;
+            case l_lookup.lookup_type
+              when 1 then parse_lookup_type1( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 2 then parse_lookup_type2( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 3 then parse_lookup_type3( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 4 then parse_lookup_mark_to( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 5 then parse_lookup_type5( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 6 then parse_lookup_mark_to( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 8 then parse_lookup_type8( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+              when 9 then parse_lookup_type9( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
+else null;
+            end case;
+            l_done := l_done + 1;
+          end loop;
+          return l_lookup;
+        end parse_lookup_table;
+      begin
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#lookuplist-table
+        l_sz := 8100;
+        l_done := l_sz;
+        l_b_cnt := 0;
+        l_to_do := uint16( rawtohex( dbms_lob.substr( p_font, 2, p_offs ) ) );
+        for i in 0 .. l_to_do - 1  -- zero-based
+        loop
+          if l_done = l_sz
+          then
+            l_buf := dbms_lob.substr( p_font, 2 * least( l_sz, l_to_do ), p_offs + 2 + l_b_cnt * 2 * l_sz );
+            l_done := 0;
+            l_b_cnt := l_b_cnt + 1;
+            l_to_do := l_to_do - l_sz;
+          end if;
+          l_gpos.lookup_list( i ) := parse_lookup_table( p_offs + substr2num( 1 + 4 * l_done ) );
+          l_done := l_done + 1;
+        end loop;
+      end parse_lookup_list;
+    begin
+      l_header := dbms_lob.substr( p_font, 14, p_offset );
+      l_gpos.table_type := 'GPOS';
+      -- ScriptList table
+      l_gpos.script_list := parse_script_list( p_offset + uint16( substr( l_header, 9, 4 ) ) );
+      -- FeatureList table
+      l_gpos.feature_list := parse_feature_list( p_offset + uint16( substr( l_header, 13, 4 ) ) );
+      -- LookupList table
+      parse_lookup_list( p_offset + uint16( substr( l_header, 17, 4 ) ) );
+      g_pdf.gsub_gpos( - p_font_idx ) := l_gpos;
+    end parse_gpos;
+    --
+    procedure parse_gdef( p_font_idx pls_integer, p_offset integer )
+    is
+      l_offs integer;
+    begin
+      l_buf := dbms_lob.substr( p_font, 6, p_offset );
+      l_offs := substr2num( 9 );
+      if l_offs > 0
+      then
+        g_pdf.gdef( p_font_idx ).class_def := parse_class_def( p_offset + l_offs );
+      end if;
+    end parse_gdef;
+    --
   begin
     l_buf := dbms_lob.substr( p_font, 4096, p_offset );
     if substr( l_buf, 1, 8 ) = '74746366' -- ttcf
     then
       for i in 0 .. to_number( substr( l_buf, 17, 8 ), 'XXXXXXXX' ) - 1
       loop
-        l_idx := load_font( p_font, p_embed, to_number( dbms_lob.substr( p_font, 4, 13 + i * 4 ), 'XXXXXXXX' ) + 1 );
+        l_idx := load_font( p_font, p_embed, p_subset, to_number( dbms_lob.substr( p_font, 4, 13 + i * 4 ), 'XXXXXXXX' ) + 1, p_opentype_features );
       end loop;
       return l_idx;
     elsif substr( l_buf, 1, 8 ) = rawtohex( c_LOCAL_FILE_HEADER ) -- zip file
@@ -5192,7 +8993,7 @@ $END
         if lower( substr( utl_raw.cast_to_varchar2( l_cfh.name1 ), -4 ) )
               in ( '.otf', '.ttf', '.ttc', '.otc' )
         then
-          l_idx := load_font( parse_file( p_font, l_cfh ), p_embed, 1 );
+          l_idx := load_font( parse_file( p_font, l_cfh ), p_embed, p_subset, 1, p_opentype_features );
         end if;
       end loop;
       return l_idx;
@@ -5204,6 +9005,7 @@ $END
     then
       raise_application_error( -20020, 'No OpenType/TrueType header.' );
     end if;
+    l_idx := g_pdf.fonts.count + 1;
     if substr( l_buf, 1, 8 ) = '00010000'
     then
       l_font.subtype := 'TrueType';
@@ -5230,11 +9032,16 @@ $END
       raise_application_error( -20021, 'Missing OpenType table.' );
     end if;
     --
+    l_font.cff := l_tables.exists( 'CFF ' );
     l_font.numGlyphs := blob2num( p_font, 2, 4 + l_tables( 'maxp' ).offset );
     --
     declare
+      l_offs            pls_integer;
+      l_code            pls_integer;
       l_glyph           pls_integer;
+      l_remap_symbol    pls_integer;
       l_offset          integer;
+      l_code2glyph      tp_pls_tab;
       l_end_code        tp_pls_tab;
       l_start_code      tp_pls_tab;
       l_id_delta        tp_pls_tab;
@@ -5260,12 +9067,14 @@ $END
         end loop;
       end;
     begin
-      l_buf := dbms_lob.substr( p_font, 16000, l_tables( 'cmap' ).offset );
-      for i in 0 .. substr2num( 5 ) - 1
+      l_offset := l_tables( 'cmap' ).offset;
+      l_buf := dbms_lob.substr( p_font, 16000, l_offset );
+      for i in reverse 0 .. substr2num( 5 ) - 1
       loop
         continue when substr( l_buf, 9  + i * 16, 4 ) != '0003' -- Platform ID = Windows
                    or substr( l_buf, 13 + i * 16, 4 ) not in ( '0000' -- Symbol
                                                              , '0001' -- Unicode BMP (UCS-2)
+                                                             , '000A' -- Unicode full repertoire
                                                              ); -- encodingID
         if substr( l_buf, 13 + i * 16, 4 ) = '0000'
         then
@@ -5273,63 +9082,93 @@ $END
         else
           l_font.flags := 32; -- non-symbolic
         end if;
-        l_offset := l_tables( 'cmap' ).offset
-                  + to_number( substr( l_buf, 17 + i * 16, 8 ), 'XXXXXXXX' );
+        l_offset := l_offset + to_number( substr( l_buf, 17 + i * 16, 8 ), 'XXXXXXXX' );
         l_buf := dbms_lob.substr( p_font, 16, l_offset );
-        if substr( l_buf, 1, 4 ) != '0004'
+        if substr( l_buf, 1, 4 ) = '000C'
         then
-          raise_application_error( -20022, 'Only character-to-glyph-index mapping 0004 is handled, this file has ' || substr( l_buf, 1, 4 ) );
-        end if;
-        l_cnt := substr2num( 13 ) / 2;
-        load_values( 14, l_end_code );
-        load_values( 16 + l_cnt * 2, l_start_code );
-        load_values( 16 + l_cnt * 4, l_id_delta );
-        load_values( 16 + l_cnt * 6, l_id_range_offset );
-        for j in 0 .. l_cnt - 1
-        loop
-          l_tmp := l_id_range_offset( j );
-          if l_tmp = 0
+          l_offset := l_offset + 16;
+          for i in 0 .. to_number( substr( l_buf, 25, 8 ), 'XXXXXXXX' ) - 1
+          loop
+            if mod( i, 1360 ) = 0
+            then
+              l_offs := 1;
+              l_buf := dbms_lob.substr( p_font, 1360 * 12, l_offset );
+              l_offset := l_offset + 1360 * 12;
+            end if;
+            l_glyph := to_number( substr( l_buf, l_offs + 16, 8 ), 'XXXXXXXX' );
+            for j in to_number( substr( l_buf, l_offs, 8 ), 'XXXXXXXX' ) .. to_number( substr( l_buf, l_offs + 8, 8 ), 'XXXXXXXX' )
+            loop
+              l_code2glyph( j ) := l_glyph;
+              l_glyph := l_glyph + 1;
+            end loop;
+            l_offs := l_offs + 24;
+          end loop;
+        else
+          if substr( l_buf, 1, 4 ) != '0004'
           then
-            l_tmp := l_id_delta( j );
-            for c in l_start_code( j ) .. l_end_code( j )
-            loop
-              l_font.code2glyph( c ) := bitand( c + l_tmp, 65535 );
-            end loop;
-          else
-            l_start := l_start_code( j );
-            l_tmp := l_tmp  + 2 * ( j - l_cnt );
-            l_buf := dbms_lob.substr( p_font, 2 + 2 * ( l_end_code( j ) - l_start ), l_offset + 16 + l_cnt * 8 + l_tmp );
-            for c in l_start .. l_end_code( j )
-            loop
-              l_font.code2glyph( c ) := substr2num( 1 + ( c - l_start ) * 4 );
-            end loop;
+            raise_application_error( -20022, 'Only character-to-glyph-index mapping 0004 is handled, this file has ' || substr( l_buf, 1, 4 ) );
           end if;
-        end loop;
+          l_cnt := substr2num( 13 ) / 2;
+          load_values( 14, l_end_code );
+          load_values( 16 + l_cnt * 2, l_start_code );
+          load_values( 16 + l_cnt * 4, l_id_delta );
+          load_values( 16 + l_cnt * 6, l_id_range_offset );
+          for j in 0 .. l_cnt - 1
+          loop
+            l_tmp := l_id_range_offset( j );
+            if l_tmp = 0
+            then
+              l_tmp := l_id_delta( j );
+              for c in l_start_code( j ) .. l_end_code( j )
+              loop
+                l_code2glyph( c ) := bitand( c + l_tmp, 65535 );
+              end loop;
+            else
+              l_sz := 8000;
+              l_end   := l_end_code( j );
+              l_start := l_start_code( j );
+              l_tmp := l_tmp  + 2 * ( j - l_cnt );
+              <<cmap_outer>>
+              for s in 0 ..  10
+              loop
+                exit when l_start + s * l_sz > l_end;
+                l_buf := dbms_lob.substr( p_font, 2 * least( 1 + l_end - l_start - s * l_sz, l_sz ), l_offset + 16 + l_cnt * 8 + l_tmp + s * 2 * l_sz );
+                for p in 0 .. l_sz - 1
+                loop
+                  exit cmap_outer when l_start + p + s * l_sz > l_end;
+                  l_code2glyph( l_start + p + s * l_sz ) := substr2num( 1 + p * 4 );
+                end loop;
+              end loop;
+            end if;
+          end loop;
+        end if;
         exit;
       end loop;
       --
-      l_glyph := l_font.code2glyph.first;
-      while l_glyph is not null
+      l_code := l_code2glyph.first;
+      if bitand( l_font.flags, 4 ) > 0 and l_font.numGlyphs < 256
+      then
+        -- for a symbolic font, assume code 32, space maps to the first code from the font
+        l_remap_symbol := l_code - 32;
+      else
+        l_remap_symbol := 0;
+      end if;
+      while l_code is not null
       loop
---dbms_output.put_line( l_glyph || ' ' || to_char( l_glyph, 'fm0XXX' ) || ' ' || l_font.code2glyph( l_glyph ) );
-         if l_font.code2glyph( l_glyph ) = 0
-         then
-           l_font.notdef := l_glyph;
-           exit;
-         end if;
-         l_glyph := l_font.code2glyph.next( l_glyph );
+        l_glyph := l_code2glyph( l_code );
+        if l_glyph = 0
+        then
+          l_font.notdef := l_code;
+        end if;
+        g_pdf.font_code_cache( l_idx )( l_code + l_remap_symbol ) := l_glyph;
+        g_pdf.font_code_cache( l_idx )( - l_glyph ) := l_code + l_remap_symbol;
+        l_code := l_code2glyph.next( l_code );
       end loop;
+      l_font.notdef := coalesce( l_font.notdef, 65535 );
     end;
     --
-    l_buf := dbms_lob.substr( p_font, 34, l_tables( 'post' ).offset );
-    l_font.italic_angle := substr2snum( 9 ) + substr2snum( 13 ) / 16384;
-    if substr( l_buf, 25, 8 ) != '00000000'
-    then
-      l_font.flags := l_font.flags + 1; -- fixed pitch
-    end if;
-    --
     l_buf := dbms_lob.substr( p_font, 52, l_tables( 'head' ).offset );
-    if substr( l_buf, 25, 8 ) = '5F0F3CF5'  -- magic
+    if substr( l_buf, 25, 8 ) = '5F0F3CF5'  -- magicNumber
     then
       l_tmp := substr2num( 89 );
       if bitand( l_tmp, 1 ) = 1
@@ -5345,12 +9184,20 @@ $END
         l_font.flags := l_font.flags + 64;
       end if;
       l_font.style := nvl( l_font.style, 'N' );
-      l_font.unit_norm := 1000 / substr2num( 37 );
+      l_font.unit_norm := 1000 / substr2num( 37 ); -- unitsPerEm
       l_font.bb_xmin := substr2snum( 73 ) * l_font.unit_norm;
       l_font.bb_ymin := substr2snum( 77 ) * l_font.unit_norm;
       l_font.bb_xmax := substr2snum( 81 ) * l_font.unit_norm;
       l_font.bb_ymax := substr2snum( 85 ) * l_font.unit_norm;
       l_font.indexToLocFormat := 2 * ( substr2num( 101 ) + 1 ); -- 0 for short offsets, 1 for long => size in bytes
+    end if;
+    --
+    l_buf := dbms_lob.substr( p_font, 34, l_tables( 'post' ).offset );
+    l_font.italic_angle := substr2snum( 9 ) + substr2snum( 13 ) / 16384;
+    l_font.underline_pos := substr2snum( 17 ) * l_font.unit_norm;
+    if substr( l_buf, 25, 8 ) != '00000000'
+    then
+      l_font.flags := l_font.flags + 1; -- fixed pitch
     end if;
     --
     l_buf := dbms_lob.substr( p_font, 36, l_tables( 'hhea' ).offset );
@@ -5369,38 +9216,42 @@ $END
       l_buf := dbms_lob.substr( p_font, 4 * 4000, l_tables( 'hmtx' ).offset + 16000 * i );
       for j in 0 .. 4000 - 1 -- Number of hMetric entries
       loop
-        exit hmetric_loop when j + 4000 * i >= l_tmp;
-        l_font.hmetrics( j + 4000 * i ) := substr2num( 1 + 8 * j ); -- only advance width, skip
+        l_glyph := j + 4000 * i;
+        exit hmetric_loop when l_glyph >= l_tmp;
+        l_width := substr2num( 1 + 8 * j ); -- only Advance width, skip Left side bearing
+        g_pdf.font_width_cache( l_idx )( l_glyph ) := l_width;
+        if g_pdf.font_code_cache( l_idx ).exists( - l_glyph )
+        then
+          g_pdf.font_width_cache( l_idx )( - g_pdf.font_code_cache( l_idx )( - l_glyph ) ) := l_width;
+        end if;
       end loop;
     end loop;
     --
-    l_buf := dbms_lob.substr( p_font, l_tables( 'name' ).length, l_tables( 'name' ).offset );
+    l_offs := l_tables( 'name' ).offset;
+    l_buf := dbms_lob.substr( p_font, least( l_tables( 'name' ).length, 16380 ), l_offs );
     if substr( l_buf, 1, 4 ) = '0000' -- format 0
     then
-      l_start := 1 + 2 * substr2num( 9 );
+      l_start := substr2num( 9 );
       for i in 0 .. substr2num( 5 ) - 1
       loop
         if (   substr( l_buf, 13 + i * 24, 4 ) = '0003' -- Windows
            and substr( l_buf, 21 + i * 24, 4 ) = '0409' -- English United States
+           and substr( l_buf, 25 + i * 24, 4 ) in ( '0001', '0006' )
            )
         then
-          case substr( l_buf, 25 + i * 24, 4 )
-            when '0001'
-            then
-              l_font.family := utl_i18n.raw_to_char( substr( l_buf, l_start + 2 * substr2num( 33 + i * 24 ), 2 * substr2num( 29 + i * 24 ) ), 'AL16UTF16' );
-            when '0006'
-            then
-              l_font.name := utl_i18n.raw_to_char( substr( l_buf, l_start + 2 * substr2num( 33 + i * 24 ), 2 * substr2num( 29 + i * 24 ) ), 'AL16UTF16' );
-            else
-              null;
-          end case;
+          if substr( l_buf, 25 + i * 24, 4 ) = '0001'
+          then
+            l_font.family := utl_i18n.raw_to_char( dbms_lob.substr( p_font, substr2num( 29 + i * 24 ), l_offs + l_start + substr2num( 33 + i * 24 ) ), 'AL16UTF16' );
+            exit when l_font.name is not null;
+          else
+            l_font.name := utl_i18n.raw_to_char( dbms_lob.substr( p_font, substr2num( 29 + i * 24 ), l_offs + l_start + substr2num( 33 + i * 24 ) ), 'AL16UTF16' );
+            exit when l_font.family is not null;
+          end if;
         end if;
       end loop;
-else
-dbms_output.put_line( '********************* name *********** ' || substr( l_buf, 1, 4 ) );
     end if;
-    l_font.name   := coalesce( l_font.name,   'unknown' );
-    l_font.family := coalesce( l_font.family, 'unknown' );
+    l_font.name   := coalesce( l_font.name,   'unknown, name type 1' );
+    l_font.family := coalesce( l_font.family, 'unknown, name type 1' );
     --
     l_font.stemv := 50;
     l_font.family := lower( l_font.family );
@@ -5409,134 +9260,324 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     if l_tables.exists( 'OS/2' )
     then
       l_buf := dbms_lob.substr( p_font, 90, l_tables( 'OS/2' ).offset );
+      l_font.strikeout_pos := substr2snum( 57 ) * l_font.unit_norm; -- yStrikeoutPosition
       l_font.ascent  := substr2snum( 137 ) * l_font.unit_norm;
       l_font.descent := substr2snum( 141 ) * l_font.unit_norm;
       l_font.linegap := substr2snum( 145 ) * l_font.unit_norm;
 -- ascent - descent = 1000
 -- 1000 + linegap => next line
-      if substr2num( 11 ) > 1
+      if substr2num( 1 ) > 1  -- OS/2 version 2 or higher
       then
         l_font.capheight := substr2snum( 177 );
       else
         l_font.capheight := l_font.ascent;
       end if;
+      l_font.win_ascent := substr2snum( 149 ) * l_font.unit_norm;
+      l_font.win_descent := - abs( substr2snum( 153 ) * l_font.unit_norm );
+-- https://stackoverflow.com/questions/35485179/stemv-value-of-the-truetype-font
+      l_font.stemv := substr2snum( 9 ) / 65;
+      l_font.stemv := round( l_font.stemv * l_font.stemv ) + 50;
       --
       if     p_embed
          and substr( l_buf, 19, 2 ) != '02' -- Restricted License embedding
       then
-        l_font.fontfile2 := p_font;
+        g_pdf.font_files( l_idx ) := p_font;
         l_font.ttf_offset := p_offset;
         l_font.subset := dbms_lob.substr( p_font, 1, l_tables( 'OS/2' ).offset + 8 ) = hextoraw( '00' );
         l_font.name := dbms_random.string( 'u', 6 ) || '+' || l_font.name;
       end if;
     end if;
     --
---dbms_output.put_line( l_font.fontname
--- || ' numGlyphs: ' || l_font.numGlyphs
--- || ', post ' || dbms_lob.substr( p_font, 4, l_tables( 'post' ).offset )
--- || case when bitand( l_font.flags, 4 ) > 0 then ', symbolic' end
--- || case when l_font.fontfile2 is null then ', not embedded' end );
---dbms_output.put_line( dbms_lob.substr( p_font, 200, l_tables( 'CFF ' ).offset ) );
-    g_pdf.fonts( g_pdf.fonts.count + 1 ) := l_font;
-    return g_pdf.fonts.count;
+    -- https://fontdrop.info/
+    -- https://twardoch.github.io/test-fonts/otetest/
+    -- https://itextpdf.com/sites/default/files/attachments/PP_Advanced_typography_in_PDF.pdf
+    -- https://github.com/SixLabors/Fonts/tree/main/tests/Fonts
+    -- https://www.christophdusenbery.com/urdu-fonts/
+    -- https://learn.microsoft.com/en-us/dotnet/desktop/wpf/advanced/opentype-font-features
+    if p_opentype_features and l_tables.exists( 'GSUB' )
+    then
+      parse_gsub( l_idx, l_tables( 'GSUB' ).offset );
+    end if;
+    if p_opentype_features and l_tables.exists( 'GPOS' )
+    then
+      parse_gpos( l_idx, l_tables( 'GPOS' ).offset );
+    end if;
+    if p_opentype_features and l_tables.exists( 'GDEF' )
+    then
+      parse_gdef( l_idx, l_tables( 'GDEF' ).offset );
+    end if;
+/*
+g_pdf.font_code_cache.delete;
+g_pdf.font_glyph_cache.delete;
+g_pdf.font_width_cache.delete;
+g_pdf.gdef.delete;
+g_pdf.gsub_gpos.delete;
+return 100;
+*/
+    --
+    if not p_subset
+    then
+      l_font.subset := false;
+    end if;
+    l_font.delete_in_gsub_type6 := true;
+    g_pdf.fonts( l_idx ) := l_font;
+    g_pdf.font_old_new( l_idx ) := tp_pls_tab();
+    return l_idx;
   end load_font;
   --
   function load_font
-    ( p_font  blob
-    , p_embed boolean := true
+    ( p_font              blob
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     )
   return pls_integer
   is
   begin
-    return load_font( p_font     => p_font
-                    , p_embed    => p_embed
-                    , p_offset   => 1
+    return load_font( p_font              => p_font
+                    , p_embed             => p_embed
+                    , p_subset            => p_subset
+                    , p_offset            => 1
+                    , p_opentype_features => p_opentype_features
                     );
   end load_font;
   --
   function load_font
-    ( p_dir      varchar2
-    , p_filename varchar2
-    , p_embed    boolean := true
+    ( p_dir               varchar2
+    , p_filename          varchar2
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     )
   return pls_integer
   is
   begin
-    return load_font( p_font     => file2blob( p_dir, p_filename )
-                    , p_embed    => p_embed
-                    , p_offset   => 1
+    return load_font( p_font              => file2blob( p_dir, p_filename )
+                    , p_embed             => p_embed
+                    , p_subset            => p_subset
+                    , p_offset            => 1
+                    , p_opentype_features => p_opentype_features
                     );
   end load_font;
+  --
+  function load_google_font
+    ( p_family            varchar2
+    , p_variant           varchar2 := 'normal'
+    , p_subset            varchar2 := null
+    , p_embed             boolean  := true
+    , p_opentype_features boolean  := true
+    )
+  return pls_integer
+  is
+    l_font     blob;
+    l_fonts    clob;
+    l_idx      pls_integer;
+    l_pos1     pls_integer;
+    l_pos2     pls_integer;
+    l_pos3     pls_integer;
+    l_pos4     pls_integer;
+    l_url      varchar2(32767);
+    --
+$IF as_pdf.use_utl_http
+$THEN
+    l_buf        raw(32767);
+    l_txt        varchar2(32767);
+    l_proxy      varchar2(32767);
+    l_no_proxy   varchar2(32767);
+    l_rck        utl_http.request_context_key;
+    l_req        utl_http.req;
+    l_resp       utl_http.resp;
+    e_font_error exception;
+    e_no_font1   exception;
+    e_no_font2   exception;
+$END
+  begin
+$IF as_pdf.use_utl_http OR as_pdf.use_apex
+$THEN
+    l_url := 'https://fonts.googleapis.com/css?family=';
+    l_url := l_url || utl_url.escape( p_family );
+    if p_variant is not null
+    then
+      l_url := l_url || ':' || p_variant;
+    end if;
+    if p_subset is not null
+    then
+      l_url := l_url || '&' || 'subset=' || lower( p_subset );
+    end if;
+$IF as_pdf.use_apex
+$THEN
+    l_fonts := apex_web_service.make_rest_request
+                 ( p_url            => l_url
+                 , p_http_method    => 'GET'
+                 , p_proxy_override => g_proxy
+                 , p_wallet_path    => g_wallet_path
+                 , p_wallet_pwd     => g_wallet_password
+                 );
+    if apex_web_service.g_status_code != 200
+    then
+      raise_application_error( -20050, 'No Google font found.' );
+    end if;
+$ELSE
+    utl_http.get_proxy( l_proxy, l_no_proxy );
+    utl_http.set_proxy( g_proxy, g_no_proxy );
+    utl_http.set_detailed_excp_support( true );
+    l_rck := utl_http.create_request_context( wallet_path => g_wallet_path, wallet_password => g_wallet_password );
+    l_req := utl_http.begin_request( url => l_url, request_context => l_rck );
+    l_resp := utl_http.get_response( l_req );
+    if l_resp.status_code != 200
+    then
+      raise e_no_font1;
+    end if;
+    begin
+      loop
+        utl_http.read_text( l_resp, l_txt, 32767 );
+        l_fonts := l_fonts || l_txt;
+      end loop;
+    exception
+      when utl_http.end_of_body then
+        utl_http.end_response( l_resp );
+    end;
+$END
+    l_pos1 := 1;
+    loop
+      l_pos1 := instr( l_fonts, '@font-face', l_pos1 );
+      exit when l_pos1 = 0;
+      l_pos2 := instr( l_fonts, '}', l_pos1 );
+      exit when l_pos2 = 0;
+      l_pos3 := instr( l_fonts, 'src: url(', l_pos1 ) + 9;
+      exit when l_pos3 = 0;
+      l_pos4 := instr( l_fonts, ')', l_pos3 );
+      exit when l_pos4 = 0;
+      --
+      l_url := substr( l_fonts, l_pos3, l_pos4 - l_pos3 );
+$IF as_pdf.use_apex
+$THEN
+      l_font := apex_web_service.make_rest_request_b
+                  ( p_url            => l_url
+                  , p_http_method    => 'GET'
+                  , p_proxy_override => g_proxy
+                  , p_wallet_path    => g_wallet_path
+                  , p_wallet_pwd     => g_wallet_password
+                  );
+      if apex_web_service.g_status_code != 200
+      then
+        raise_application_error( -20052, 'No Google font found.' );
+      end if;
+$ELSE
+      l_req := utl_http.begin_request( url => l_url, request_context => l_rck );
+      l_resp := utl_http.get_response( l_req );
+      if l_resp.status_code != 200
+      then
+        raise e_no_font2;
+      end if;
+      dbms_lob.createtemporary( l_font, true );
+      begin
+        loop
+          utl_http.read_raw( l_resp, l_buf, 32767 );
+          dbms_lob.writeappend( l_font, utl_raw.length( l_buf ), l_buf );
+        end loop;
+      exception
+        when utl_http.end_of_body then
+          utl_http.end_response( l_resp );
+      end;
+$END
+      begin
+        l_idx := load_font( p_font              => l_font
+                          , p_embed             => p_embed
+                          , p_opentype_features => p_opentype_features
+                          );
+      exception
+        when others then
+          raise e_font_error;
+      end;
+      dbms_lob.freetemporary( l_font );
+      --
+      l_pos1 := l_pos2;
+    end loop;
+$IF as_pdf.use_utl_http and not as_pdf.use_apex
+$THEN
+    utl_http.destroy_request_context( l_rck );
+    utl_http.set_proxy( l_proxy, l_no_proxy );
+    return l_idx;
+  exception
+    when e_font_error then
+      utl_http.destroy_request_context( l_rck );
+      utl_http.set_proxy( l_proxy, l_no_proxy );
+      raise_application_error( -20054, sqlerrm );
+    when e_no_font1 then
+      utl_http.set_proxy( l_proxy, l_no_proxy );
+      utl_http.end_response( l_resp );
+      utl_http.end_request( l_req );
+      utl_http.destroy_request_context( l_rck );
+      raise_application_error( -20051, 'No Google font found.' );
+    when e_no_font2 then
+      utl_http.set_proxy( l_proxy, l_no_proxy );
+      utl_http.end_response( l_resp );
+      utl_http.end_request( l_req );
+      utl_http.destroy_request_context( l_rck );
+      raise_application_error( -20053, 'No Google font found.' );
+    when others then
+      utl_http.set_proxy( l_proxy, l_no_proxy );
+      utl_http.end_request( l_req );
+      utl_http.destroy_request_context( l_rck );
+      raise;
+$ELSE
+    return l_idx;
+$END
+$ELSE
+    raise_application_error( -20029, 'apex_web_service and utl_http not available. Change the package header, set either use_apex := true; or use_utl_http := true;' );
+$END
+  end load_google_font;
   --
   procedure load_font
-    ( p_font     blob
-    , p_embed    boolean := true
+    ( p_font              blob
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     )
   is
     l_idx pls_integer;
   begin
-    l_idx := load_font( p_font     => p_font
-                      , p_embed    => p_embed
+    l_idx := load_font( p_font              => p_font
+                      , p_embed             => p_embed
+                      , p_subset            => p_subset
+                      , p_opentype_features => p_opentype_features
                       );
   end load_font;
   --
   procedure load_font
-    ( p_dir      varchar2
-    , p_filename varchar2
-    , p_embed    boolean := true
+    ( p_dir               varchar2
+    , p_filename          varchar2
+    , p_embed             boolean := true
+    , p_subset            boolean := true
+    , p_opentype_features boolean := true
     )
   is
   begin
-    load_font( p_font     => file2blob( p_dir, p_filename )
-             , p_embed    => p_embed
+    load_font( p_font              => file2blob( p_dir, p_filename )
+             , p_embed             => p_embed
+             , p_subset            => p_subset
+             , p_opentype_features => p_opentype_features
              );
   end load_font;
   --
-  function pdf_string( p_txt in blob )
-  return blob
+  procedure load_google_font
+    ( p_family            varchar2
+    , p_variant           varchar2 := 'normal'
+    , p_subset            varchar2 := null
+    , p_embed             boolean  := true
+    , p_opentype_features boolean  := true
+    )
   is
-    l_rv  blob := p_txt;
-    l_ind integer;
-    c_back_slash        constant raw(1) := hextoraw( '5C' ); -- \
-    c_left_parenthesis  constant raw(1) := hextoraw( '29' ); -- (
-    c_right_parenthesis constant raw(1) := hextoraw( '28' ); -- )
-    c_line_feed         constant raw(1) := hextoraw( '0A' ); -- \n
-    c_horizontal_tab    constant raw(1) := hextoraw( '09' ); -- \t
-    c_carriage_return   constant raw(1) := hextoraw( '0D' ); -- \r
-    c_n                 constant raw(1) := hextoraw( '6E' ); -- n
-    c_r                 constant raw(1) := hextoraw( '72' ); -- t
-    c_t                 constant raw(1) := hextoraw( '74' ); -- r
-    --
-    procedure pdf_esc( p_what raw, p_to raw )
-    is
-    begin
-      l_ind := -1;
-      loop
-        l_ind := dbms_lob.instr( l_rv, p_what, l_ind + 2 );
-        exit when l_ind <= 0;
-        dbms_lob.copy( l_rv
-                     , l_rv
-                     , dbms_lob.lobmaxsize
-                     , l_ind + 2
-                     , l_ind + 1
-                     );
-        dbms_lob.copy( l_rv
-                     , utl_raw.concat( c_back_slash, p_to )
-                     , 2
-                     , l_ind
-                     , 1
-                     );
-      end loop;
-    end pdf_esc;
+    l_idx pls_integer;
   begin
-    pdf_esc( c_back_slash,        c_back_slash );
-    pdf_esc( c_left_parenthesis,  c_left_parenthesis );
-    pdf_esc( c_right_parenthesis, c_right_parenthesis );
-    pdf_esc( c_carriage_return,   c_r );
-    pdf_esc( c_line_feed,         c_n );
-    pdf_esc( c_horizontal_tab,    c_t );
-    return l_rv;
-  end pdf_string;
+    l_idx := load_google_font( p_family            => p_family
+                             , p_variant           => p_variant
+                             , p_subset            => p_subset
+                             , p_embed             => p_embed
+                             , p_opentype_features => p_opentype_features
+                             );
+  end load_google_font;
   --
   function string2raw( p_txt    varchar2 character set any_cs
                      , p_target varchar2
@@ -5551,6 +9592,9 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
         return utl_raw.cast_to_raw( p_txt );
       end if;
       return utl_raw.convert( utl_raw.cast_to_raw( p_txt ), p_target, c_db_ncharset );
+    elsif c_db_charset = p_target
+    then
+      return utl_raw.cast_to_raw( p_txt );
     else
       return utl_raw.convert( utl_raw.cast_to_raw( p_txt ), p_target, c_db_charset );
     end if;
@@ -5559,21 +9603,6 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
       return utl_i18n.string_to_raw( p_txt, p_target );
   end string2raw;
   --
-  function gfi( p_font_index pls_integer )
-  return pls_integer
-  is
-  begin
-    if p_font_index is not null and g_pdf.fonts.exists( p_font_index )
-    then
-      return p_font_index;
-    end if;
-    if g_pdf.current_font is null
-    then
-      set_font( p_family => 'helvetica' );
-    end if;
-    return g_pdf.current_font;
-  end gfi;
-  --
   function str_len
     ( p_txt        varchar2 character set any_cs
     , p_font_index pls_integer := null
@@ -5581,22 +9610,24 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     )
   return number
   is
-    l_len          pls_integer;
-    l_code         pls_integer;
-    l_remap_symbol pls_integer;
-    l_tmp          raw(32767);
-    l_buf          varchar2(32767);
-    l_last         number;
-    l_width        number;
-    l_font         tp_font;
+    l_len         pls_integer;
+    l_code        pls_integer;
+    l_font_index  pls_integer;
+    l_tmp         raw(32767);
+    l_buf         varchar2(32767);
+    l_last        number;
+    l_width       number;
+    l_font        tp_font;
   begin
+    l_font_index := coalesce( p_font_index, g_pdf.current_font );
     if    p_txt is null
-       or not g_pdf.fonts.exists( coalesce( p_font_index, g_pdf.current_font ) )
+       or l_font_index is null
+       or not g_pdf.fonts.exists( l_font_index )
     then
       return 0;
     end if;
     l_width := 0;
-    l_font := g_pdf.fonts( coalesce( p_font_index, g_pdf.current_font ) );
+    l_font := g_pdf.fonts( l_font_index );
     if l_font.standard
     then
       l_tmp := string2raw( p_txt, 'WE8MSWIN1252' );
@@ -5609,34 +9640,27 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
       loop
         if l_len < 16384
         then
-          l_code := to_number( substr( l_tmp, 2 * i - 1, 2 ), 'XX' );
+          l_code := g_hex( substr( l_tmp, 2 * i - 1, 2 ) );
         else
-          l_code := to_number( utl_raw.substr( l_tmp, i, 1 ), 'XX' );
+          l_code := g_hex( rawtohex( utl_raw.substr( l_tmp, i, 1 ) ) );
         end if;
-        if l_font.char_width_tab.exists( l_code )
+        if l_code between 0 and 255
         then
-          l_width := l_width + l_font.char_width_tab( l_code );
+          l_width := l_width + g_pdf.font_width_cache( - l_font_index )( l_code );
         end if;
       end loop;
     else
-      if bitand( l_font.flags, 4 ) > 0 and l_font.numGlyphs < 256
-      then
-        -- assume code 32, space maps to the first code from the font
-        l_remap_symbol := l_font.code2glyph.first - 32;
-      else
-        l_remap_symbol := 0;
-      end if;
-      l_last := l_font.hmetrics( l_font.hmetrics.last );
+      l_last := g_pdf.font_width_cache( l_font_index )( g_pdf.font_width_cache( l_font_index ).last );
       l_tmp := string2raw( p_txt, 'AL16UTF16' );
       for i in 1 .. length( p_txt )
       loop
-        l_code := to_number( utl_raw.substr( l_tmp, i * 2 - 1,  2 ), '0XXX' ) + l_remap_symbol;
-        if     l_font.code2glyph.exists( l_code )
-           and l_font.hmetrics.exists( l_font.code2glyph( l_code ) )
+        l_code := to_number( utl_raw.substr( l_tmp, i * 2 - 1,  2 ), '0XXX' );
+        if g_pdf.font_width_cache( l_font_index ).exists( - l_code )
         then
-          l_width := l_width + l_font.hmetrics( l_font.code2glyph( l_code ) );
+          l_width := l_width + g_pdf.font_width_cache( l_font_index )( - l_code );
         else
           l_width := l_width + l_last;
+          g_pdf.font_width_cache( l_font_index )( - l_code ) := l_last;
         end if;
       end loop;
       l_width := l_width * l_font.unit_norm;
@@ -5644,20 +9668,817 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     return l_width * coalesce( p_fontsize, l_font.fontsize, c_default_fontsize ) / 1000;
   end str_len;
   --
-  function txt2raw
-    ( p_txt        varchar2 character set any_cs
-    , p_font_index pls_integer := null
+  function ordered_features
+    ( p_gsub_gpos tp_gsub_gpos
+    , p_script    varchar2
+    , p_lang_sys  varchar2
+    , p_features  tp_features
+    , p_options   varchar2
+    )
+  return tp_pls_tab
+  is
+    l_idx     pls_integer;
+    l_script  tp_script;
+    l_lookup  tp_lookup;
+    l_feature tp_feature;
+    l_rv      tp_pls_tab;
+    l_tmp     tp_pls_tab;
+  begin
+if p_gsub_gpos.table_type member of p_features then
+for i in 1 .. p_gsub_gpos.script_list.count
+loop
+  l_script := p_gsub_gpos.script_list( i );
+dbms_output.put_line( l_script.tag );
+  for j in l_script.script_table.first .. l_script.script_table.last
+  loop
+dbms_output.put_line( '  ' || j || ' ' || l_script.script_table( j ).tag );
+    l_tmp := l_script.script_table( j ).feature_indices;
+    for f in l_tmp.first .. l_tmp.last
+    loop
+      if f = 0 and l_tmp( 0 ) is null
+      then  -- no required feature
+        continue;
+      end if;
+      l_feature := p_gsub_gpos.feature_list( l_tmp( f ) );
+dbms_output.put_line( '    ' || f || ' ' || l_feature.tag );
+      for l in 1 .. l_feature.lookups.count
+      loop
+        l_lookup := p_gsub_gpos.lookup_list( l_feature.lookups( l ) );
+dbms_output.put_line( '      lookup ' || l || ' = ' || l_feature.lookups( l ) || ' ' || p_gsub_gpos.lookup_list( l_feature.lookups( l ) ).lookup_type );
+      end loop;
+    end loop;
+  end loop;
+end loop;
+end if;
+    --
+    if p_gsub_gpos.script_list is null or p_gsub_gpos.script_list.count = 0
+    then
+      for i in 0 .. p_gsub_gpos.feature_list.count - 1
+      loop
+        l_tmp( i ) := i;
+      end loop;
+    else
+      for i in 1 .. p_gsub_gpos.script_list.count
+      loop
+        l_script := p_gsub_gpos.script_list( i );
+        if l_script.tag = coalesce( p_script, 'DFLT' )
+        then
+          if p_lang_sys is null and l_script.script_table.exists( 0 )
+          then
+            l_tmp := l_script.script_table( 0 ).feature_indices; -- defaultLangSys
+          elsif p_lang_sys is not null
+          then
+            for j in 1 .. l_script.script_table.count - case when l_script.script_table.exists( 0 ) then 1 else 0 end
+            loop
+              if p_lang_sys = l_script.script_table( i ).tag
+              then
+                l_tmp := l_script.script_table( j ).feature_indices;
+                exit;
+              end if;
+            end loop;
+          end if;
+          exit;
+        end if;
+      end loop;
+    end if;
+    --
+    l_idx := 0;
+    for f in 0 .. l_tmp.count - 1
+    loop
+      if l_tmp( f ) is null
+         or p_gsub_gpos.feature_list( l_tmp( f ) ).tag not member of p_features
+      then
+        continue;
+      end if;
+      l_rv( l_idx ) := l_tmp( f );
+      l_idx := l_idx + 1;
+    end loop;
+    --
+    return l_rv;
+  end ordered_features;
+  --
+  function apply_gsub
+    ( p_font_index pls_integer
+    , p_glyphs     tp_pls_tab
+    , p_script     varchar2
+    , p_lang_sys   varchar2
+    , p_features   tp_features
+    , p_options    varchar2
+    , p_apply      boolean
+    )
+  return tp_pls_tab
+  is
+    l_cnt             pls_integer;
+    l_idx             pls_integer;
+    l_tmp_idx         pls_integer;
+    l_current         pls_integer;
+    l_applied         boolean;
+    l_delete_in_type6 boolean;
+    l_font            tp_font;
+    l_features        tp_pls_tab;
+    l_tmp_glyphs      tp_pls_tab;
+    l_gsub_glyphs     tp_pls_tab;
+    l_lookup          tp_lookup;
+    l_subt            tp_subtable;
+    l_feature         tp_feature;
+    --
+    procedure apply_lookup( p_delete_in_type6 boolean );
+    --
+    procedure apply_lookup_type1
+    is
+    begin
+      l_tmp_glyphs( l_tmp_idx ) := l_subt.coverage( l_current );
+      l_tmp_idx := l_tmp_idx + 1;
+      l_applied := true;
+    end apply_lookup_type1;
+    --
+    procedure apply_lookup_type2
+    is
+      l_tmp tp_pls_tab;
+    begin
+      l_tmp := l_subt.matrix( l_current );
+      for i in 1 .. l_tmp.count
+      loop
+        l_tmp_glyphs( l_tmp_idx ) := l_tmp( i );
+        l_tmp_idx := l_tmp_idx + 1;
+      end loop;
+      l_applied := true;
+    end apply_lookup_type2;
+    --
+    procedure apply_lookup_type4
+    is
+      l_cnt  pls_integer;
+      l_liga pls_integer;
+    begin
+      if not l_gsub_glyphs.exists( l_idx + 1 )
+      then
+        return;
+      end if;
+      <<ligatures_loop>>
+      for i in 1 .. l_subt.matrix( l_current )( 0 )
+      loop
+        l_cnt := l_subt.matrix( l_current )( 20 * i );
+        for j in 1 .. l_subt.matrix( l_current )( 20 * i )
+        loop
+          continue ligatures_loop when
+                not l_gsub_glyphs.exists( l_idx + j )
+             or l_gsub_glyphs( l_idx + j ) != l_subt.matrix( l_current )( 20 * i + 1 + j );
+        end loop;
+        l_tmp_glyphs( l_tmp_idx ) := l_subt.matrix( l_current )( 20 * i + 1 );
+        l_tmp_idx := l_tmp_idx + 1;
+        l_idx := l_idx + l_cnt;
+        l_applied := true;
+        exit;
+      end loop;
+    end apply_lookup_type4;
+    --
+      --
+    procedure apply56( p_bias pls_integer, p_current pls_integer, p_extra_len pls_integer, p_delete_in_type56 boolean )
+    is
+      l_tmp         pls_integer;
+      l_cur_idx     pls_integer;
+      l_cur_current pls_integer;
+      l_cur_tmp_idx pls_integer;
+      l_pos_applied tp_pls_tab;
+      l_cur_lookup  tp_lookup;
+      l_cur_subt    tp_subtable;
+    begin
+      for j in 0 .. p_extra_len
+      loop
+        l_tmp_glyphs( l_tmp_idx + j ) := l_gsub_glyphs( l_idx + j );
+      end loop;
+      l_cur_idx := l_idx;
+      l_cur_tmp_idx := l_tmp_idx;
+      for j in 1 .. l_subt.matrix( p_current )( p_bias )
+      loop
+        l_tmp := l_subt.matrix( p_current )( p_bias - 1 + 2 * j );
+        l_idx := l_cur_idx + l_tmp;
+        l_current := l_gsub_glyphs( l_idx );
+        l_tmp_idx := l_cur_tmp_idx + l_subt.matrix( p_current )( p_bias - 1 + 2 * j );
+        l_cur_subt := l_subt;
+        l_cur_lookup := l_lookup;
+        l_lookup := g_pdf.gsub_gpos( p_font_index ).lookup_list( l_subt.matrix( p_current )( p_bias + 2 * j ) );
+        apply_lookup( p_delete_in_type56 );
+        if l_applied
+        then
+          l_pos_applied( l_tmp ) := null;
+        end if;
+        l_subt := l_cur_subt;
+        l_lookup := l_cur_lookup;
+      end loop;
+      l_idx := l_cur_idx + p_extra_len;
+      if p_delete_in_type56 and l_subt.matrix( p_current )( p_bias ) > 0
+      then
+        l_tmp_idx := l_cur_tmp_idx;
+        for j in 0 .. p_extra_len
+        loop
+          if l_pos_applied.exists( j )
+          then
+            l_tmp_glyphs( l_tmp_idx ) := l_tmp_glyphs( l_cur_tmp_idx + j );
+            l_tmp_idx := l_tmp_idx + 1;
+          end if;
+        end loop;
+        l_tmp_glyphs.delete( l_tmp_idx,  l_tmp_idx + p_extra_len );
+      else
+        l_tmp_idx := l_cur_tmp_idx + p_extra_len + 1;
+      end if;
+      l_applied := true;
+    end apply56;
+    --
+    procedure apply_lookup_type5
+    is
+      l_bias      pls_integer;
+      l_class     pls_integer;
+      l_glyph     pls_integer;
+      l_extra_len pls_integer;
+    begin
+      if l_subt.data_list( 0 ) = 1
+      then
+        <<rule_set01>>
+        for i in 1 .. l_subt.matrix( l_current )( 0 )
+        loop
+          l_bias := i * 100;
+          l_extra_len := l_subt.matrix( l_current )( l_bias + 20 );
+          for j in 1 .. l_extra_len
+          loop
+            continue rule_set01 when not l_gsub_glyphs.exists( l_idx + j )
+                                      or l_gsub_glyphs( l_idx + j ) != l_subt.matrix( l_current )( l_bias + 20 + j );
+          end loop;
+          apply56( l_bias + 80, l_current, l_extra_len, false );
+          exit;
+        end loop;
+      elsif l_subt.data_list( 0 ) = 2
+      then
+        l_class := l_subt.coverage( l_current );
+        <<rule_set02>>
+        for i in 1 .. l_subt.matrix( l_class )( 0 )
+        loop
+          l_bias := i * 100;
+          l_extra_len := l_subt.matrix( l_class )( l_bias + 20 );
+          for j in 1 .. l_extra_len
+          loop
+            continue rule_set02 when not l_gsub_glyphs.exists( l_idx + j );
+            l_glyph := l_gsub_glyphs( l_idx + j );
+            continue rule_set02 when not l_subt.matrix.exists( - l_glyph )
+                                  or not l_subt.matrix( - l_glyph ).exists( 1 )
+                                  or l_subt.matrix( - l_glyph )( 1 ) != l_subt.matrix( l_class )( l_bias + 20 + j );
+          end loop;
+          apply56( l_bias + 80, l_class, l_extra_len, false );
+          exit;
+        end loop;
+      else
+        l_extra_len := l_subt.data_list( 1 ) - 1;
+        for j in 1 .. l_extra_len
+        loop
+          if not l_gsub_glyphs.exists( l_idx + j )
+          then
+            return;
+          end if;
+          l_glyph := l_gsub_glyphs( l_idx + j );
+          if    not l_subt.matrix.exists( - j )
+             or not l_subt.matrix( - j ).exists( l_glyph )
+             or l_subt.matrix( - j )( l_glyph ) != l_gsub_glyphs( l_idx + j )
+          then
+            return;
+          end if;
+        end loop;
+        apply56( 0, 1, l_extra_len, false );
+      end if;
+    end apply_lookup_type5;
+    --
+    procedure apply_lookup_type6( p_delete_in_type6 boolean )
+    is
+      l_bias      pls_integer;
+      l_class     pls_integer;
+      l_glyph     pls_integer;
+      l_extra_len pls_integer;
+    begin
+      if l_subt.data_list( 0 ) = 1
+      then
+        <<rule_set01>>
+        for i in 1 .. l_subt.matrix( l_current )( 0 )
+        loop
+          l_bias := i * 100;
+          for j in 1 .. l_subt.matrix( l_current )( l_bias + 20 )
+          loop
+            continue rule_set01 when l_tmp_idx - j < 1
+                                  or l_tmp_glyphs( l_tmp_idx - j ) != l_subt.matrix( l_current )( l_bias + 20 + j );
+          end loop;
+          l_extra_len := l_subt.matrix( l_current )( l_bias + 40 );
+          for j in 1 .. l_extra_len
+          loop
+            continue rule_set01 when not l_gsub_glyphs.exists( l_idx + j )
+                                      or l_gsub_glyphs( l_idx + j ) != l_subt.matrix( l_current )( l_bias + 40 + j );
+          end loop;
+          for j in 1 .. l_subt.matrix( l_current )( l_bias + 60 )
+          loop
+            continue rule_set01 when not l_gsub_glyphs.exists( l_idx + l_extra_len + j )
+                                      or l_gsub_glyphs( l_idx + l_extra_len + j ) != l_subt.matrix( l_current )( l_bias + 60 + j );
+          end loop;
+          apply56( l_bias + 80, l_current, l_extra_len, p_delete_in_type6 );
+          exit;
+        end loop;
+      elsif l_subt.data_list( 0 ) = 3
+      then
+        for i in 1 .. l_subt.data_list( 1 )
+        loop
+          if    not l_tmp_glyphs.exists( l_tmp_idx - i )
+             or not l_subt.matrix( i ).exists( l_tmp_glyphs( l_tmp_idx - i ) )
+          then
+            return;
+          end if;
+        end loop;
+        l_extra_len := l_subt.data_list( 2 ) - 1;
+        for i in 1 .. l_extra_len
+        loop
+          if    not l_gsub_glyphs.exists( l_idx + i )
+             or not l_subt.matrix( 100 + i ).exists( l_gsub_glyphs( l_idx + i ) )
+          then
+            return;
+          end if;
+        end loop;
+        for i in 1 .. l_subt.data_list( 3 )
+        loop
+          if    not l_gsub_glyphs.exists( l_idx + i + l_extra_len )
+             or not l_subt.matrix( - i ).exists( l_gsub_glyphs( l_idx + i + l_extra_len ) )
+          then
+            return;
+          end if;
+        end loop;
+        apply56( 0, 0, l_extra_len, p_delete_in_type6 );
+      elsif l_subt.data_list( 0 ) = 2
+      then
+        l_class := l_subt.coverage( l_current );
+        <<rule_set02>>
+        for i in 1 .. l_subt.matrix( l_class )( 0 )
+        loop
+          l_bias := i * 100;
+          for j in 1 .. l_subt.matrix( l_class )( l_bias + 20 )
+          loop
+            continue rule_set02 when l_tmp_idx - j < 1;
+            l_glyph := l_tmp_glyphs( l_tmp_idx - j );
+            continue rule_set02 when not l_subt.matrix.exists( - l_glyph )
+                                  or not l_subt.matrix( - l_glyph ).exists( 1 )
+                                  or l_subt.matrix( - l_glyph )( 1 ) != l_subt.matrix( l_class )( l_bias + 20 + j );
+          end loop;
+          l_extra_len := l_subt.matrix( l_class )( l_bias + 40 );
+          for j in 1 .. l_extra_len
+          loop
+            continue rule_set02 when not l_gsub_glyphs.exists( l_idx + j );
+            l_glyph := l_gsub_glyphs( l_idx + j );
+            continue rule_set02 when not l_subt.matrix.exists( - l_glyph )
+                                  or not l_subt.matrix( - l_glyph ).exists( 2 )
+                                  or l_subt.matrix( - l_glyph )( 2 ) != l_subt.matrix( l_class )( l_bias + 20 + j );
+          end loop;
+          for j in 1 .. l_subt.matrix( l_class )( l_bias + 60 )
+          loop
+            continue rule_set02 when not l_gsub_glyphs.exists( l_idx + l_extra_len + j );
+            l_glyph := l_gsub_glyphs( l_idx + l_extra_len + j );
+            continue rule_set02 when not l_subt.matrix.exists( - l_glyph )
+                                  or not l_subt.matrix( - l_glyph ).exists( 3 )
+                                  or l_subt.matrix( - l_glyph )( 3 ) != l_subt.matrix( l_class )( l_bias + 60 + j );
+          end loop;
+          apply56( l_bias + 80, l_class, l_extra_len, p_delete_in_type6 );
+          exit;
+        end loop;
+      end if;
+    end apply_lookup_type6;
+    --
+    procedure apply_lookup( p_delete_in_type6 boolean )
+    is
+    begin
+      l_applied := false;
+      for s in 1 .. l_lookup.subtables.count
+      loop
+        if not l_lookup.subtables( s ).coverage.exists( l_current )
+        then
+          continue;
+        end if;
+        l_subt := l_lookup.subtables( s );
+        --
+        case l_lookup.lookup_type
+          when 1 then apply_lookup_type1;
+          when 2 then apply_lookup_type2;
+          when 4 then apply_lookup_type4;
+          when 5 then apply_lookup_type5;
+          when 6 then apply_lookup_type6( p_delete_in_type6 );
+          else null;
+        end case;
+        --
+        exit when l_applied;
+      end loop;
+      --
+      if not l_applied
+      then
+        l_tmp_glyphs( l_tmp_idx ) := l_current;
+        l_tmp_idx := l_tmp_idx + 1;
+      end if;
+    end apply_lookup;
+    --
+  begin
+    if not p_apply or not g_pdf.gsub_gpos.exists( p_font_index )
+    then
+      return p_glyphs;
+    end if;
+    l_gsub_glyphs := p_glyphs;
+    l_font := g_pdf.fonts( p_font_index );
+    l_delete_in_type6 := l_font.delete_in_gsub_type6;
+    l_features := ordered_features( g_pdf.gsub_gpos( p_font_index ), p_script, p_lang_sys, p_features, p_options );
+    for f in 0 .. l_features.count - 1
+    loop
+      l_feature := g_pdf.gsub_gpos( p_font_index ).feature_list( l_features( f ) );
+      for l in 1 .. l_feature.lookups.count
+      loop
+        l_lookup := g_pdf.gsub_gpos( p_font_index ).lookup_list( l_feature.lookups( l ) );
+        l_cnt := l_gsub_glyphs.count;
+        l_idx := 1;
+        l_tmp_idx := 1;
+        loop
+          exit when l_idx > l_cnt;
+          l_current := l_gsub_glyphs( l_idx );
+          if l_lookup.coverage.exists( l_current )
+          then
+            apply_lookup( l_delete_in_type6 );
+          else
+            l_tmp_glyphs( l_tmp_idx ) := l_current;
+            l_tmp_idx := l_tmp_idx + 1;
+          end if;
+          l_idx := l_idx + 1;
+        end loop;
+        l_gsub_glyphs := l_tmp_glyphs;
+        l_tmp_glyphs.delete;
+      end loop;
+    end loop;
+    return l_gsub_glyphs;
+  end apply_gsub;
+  --
+  function apply_gpos
+    ( p_font_index pls_integer
+    , p_glyphs     tp_pls_tab
+    , p_x          number
+    , p_y          number
+    , p_scaled_sz  number
+    , p_script     varchar2
+    , p_lang_sys   varchar2
+    , p_features   tp_features
+    , p_apply      boolean
+    , p_rtl        boolean
     )
   return raw
   is
-    l_rv           raw(32767);
-    l_tmp          raw(32767);
-    l_notdef       raw(4);
-    l_glyph        pls_integer;
-    l_unicode      pls_integer;
-    l_font_index   pls_integer;
-    l_remap_symbol pls_integer;
+    l_x            number;
+    l_y            number;
+    l_tmp_x        number;
+    l_last         number;
+    l_applied      boolean;
     l_font         tp_font;
+    l_script       tp_script;
+    l_lookup       tp_lookup;
+    l_feature      tp_feature;
+    l_features     tp_pls_tab;
+    l_cnt          pls_integer;
+    l_idx          pls_integer;
+    l_mark         pls_integer;
+    l_anchor       pls_integer;
+    l_glyph        pls_integer;
+    l_current      pls_integer;
+    l_rv           varchar2(32767);
+    l_subt         tp_subtable;
+    l_value_record tp_value_record;
+    l_null_val_rec tp_value_record;
+    type tp_shape is record
+      ( glyph   pls_integer
+      , width   pls_integer
+      , applied boolean
+      , val_rec tp_value_record
+      );
+    type tp_shape_run is table of tp_shape index by pls_integer;
+    l_shape      tp_shape;
+    l_null_shape tp_shape;
+    l_shape_run  tp_shape_run;
+    --
+    procedure apply_lookup_type1( p_idx pls_integer )
+    is
+    begin
+      l_value_record := l_subt.value_records_list( coalesce( l_subt.coverage( l_current ), 0 ) )( 0 );
+      l_applied := true;
+    end apply_lookup_type1;
+    --
+    procedure apply_lookup_type2( p_idx pls_integer )
+    is
+      l_class pls_integer;
+      l_glyph pls_integer;
+    begin
+      if not p_glyphs.exists( p_idx + 1 )
+      then
+        return;
+      end if;
+      l_glyph := p_glyphs( p_idx + 1 );
+      l_class := l_subt.coverage( l_current );
+      if l_class is null
+      then
+        if not l_subt.value_records_list( l_current ).exists( l_glyph )
+        then
+          return;
+        end if;
+        l_value_record := l_subt.value_records_list( l_current )( l_glyph );
+        l_applied := true;
+      elsif l_subt.data_list.exists( l_glyph )
+      then
+        l_value_record := l_subt.value_records_list( l_class )( l_subt.data_list( l_glyph ) + 1 );
+        l_applied := true;
+      else
+        return;
+      end if;
+    end apply_lookup_type2;
+    --
+    procedure apply_lookup_type3( p_idx pls_integer )
+    is
+    begin
+ null;
+    end apply_lookup_type3;
+    --
+    procedure apply_lookup_type4( p_idx pls_integer )
+    is
+      l_class pls_integer;
+      l_width pls_integer;
+    begin
+      if p_idx = 1
+      then
+        return;
+      end if;
+      -- l_current should be a class 3 Mark glyph, but we don't check for it
+      for i in reverse 1 .. p_idx - 1
+      loop
+        l_glyph := p_glyphs( i );
+        --
+        if     g_pdf.gdef.exists( p_font_index )
+           and g_pdf.gdef( p_font_index ).class_def.exists( l_glyph )
+           and g_pdf.gdef( p_font_index ).class_def( l_glyph ) != 1 -- base
+        then
+          continue;
+        end if;
+/*
+        if     bitand( l_lookup.lookup_flags, 12 ) > 0
+           and g_pdf.gdef.exists( p_font_index )
+           and g_pdf.gdef( p_font_index ).class_def.exists( l_glyph )
+           and (  (   bitand( l_lookup.lookup_flags, 4 ) > 0
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 2 -- ligature
+                  )
+               or (   bitand( l_lookup.lookup_flags, 8 ) > 0  -- ???????
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 3 -- mark
+                  )
+               )
+        then
+           and g_pdf.gdef( p_font_index ).class_def.exists( l_glyph ) then ' = class ' || g_pdf.gdef( p_font_index ).class_def( l_glyph ) end );
+          continue;
+        end if;
+*/
+        --
+        if not l_subt.matrix.exists( l_glyph )
+        then
+          return;
+        end if;
+        l_class := l_subt.coverage( l_current );
+        if not l_subt.matrix( l_glyph ).exists( l_class )
+        then
+          return;
+        end if;
+        l_width := l_shape_run( i ).width;
+        l_value_record.xPlacement := l_subt.matrix( l_glyph )( l_class ) - l_subt.data_list( l_current ) - l_width;
+        l_value_record.yPlacement := l_subt.matrix( - l_glyph )( l_class ) - l_subt.data_list( - l_current );
+        l_applied := true;
+        exit;
+      end loop;
+    end apply_lookup_type4;
+    --
+    procedure apply_lookup_type5( p_idx pls_integer )
+    is
+      l_class pls_integer;
+      l_width pls_integer;
+    begin
+      if p_idx = 1
+      then
+        return;
+      end if;
+      -- l_current should be a class 3 Mark glyph, but we don't check for it
+      l_class := l_subt.coverage( l_current );
+      for i in reverse 1 .. p_idx - 1
+      loop
+        l_glyph := p_glyphs( i );
+        --
+        if     bitand( l_lookup.lookup_flags, 10 ) > 0
+           and g_pdf.gdef.exists( p_font_index )
+           and g_pdf.gdef( p_font_index ).class_def.exists( l_glyph )
+           and (  (   bitand( l_lookup.lookup_flags, 2 ) > 0
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 1 -- base
+                  )
+               or (   bitand( l_lookup.lookup_flags, 8 ) > 0
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 3 -- mark
+                  )
+               )
+        then
+          continue;
+        end if;
+        --
+        if    not l_subt.matrix.exists( l_glyph )
+           or not l_subt.matrix( l_glyph ).exists( l_class )
+        then
+          return;
+        end if;
+        l_width := l_shape_run( i ).width;
+        l_value_record.xPlacement := coalesce( l_subt.matrix( l_glyph )( l_class ), 0 ) - coalesce( l_subt.data_list( l_current ), 0 ) - l_width;
+        l_value_record.yPlacement := coalesce( l_subt.matrix( - l_glyph )( l_class ), 0 ) - coalesce( l_subt.data_list( - l_current ), 0 );
+        l_applied := true;
+        exit;
+      end loop;
+    end apply_lookup_type5;
+    --
+    procedure apply_lookup_type6( p_idx pls_integer )
+    is
+      l_class pls_integer;
+    begin
+      if p_idx = 1
+      then
+        return;
+      end if;
+      -- l_current should be a class 3 Mark glyph, but we don't check for it
+      for i in reverse 1 .. p_idx - 1
+      loop
+        l_glyph := p_glyphs( i );
+        --
+        if     bitand( l_lookup.lookup_flags, 6 ) > 0
+           and g_pdf.gdef.exists( p_font_index )
+           and g_pdf.gdef( p_font_index ).class_def.exists( l_glyph )
+           and (  (   bitand( l_lookup.lookup_flags, 4 ) > 0
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 2 -- ligature
+                  )
+               or (   bitand( l_lookup.lookup_flags, 2 ) > 0
+                  and g_pdf.gdef( p_font_index ).class_def( l_glyph ) = 1 -- base
+                  )
+               )
+        then
+          continue;
+        end if;
+        --
+        if not l_subt.matrix.exists( l_glyph )
+        then
+          return;
+        end if;
+        l_class := l_subt.coverage( l_current );
+        if not l_subt.matrix( l_glyph ).exists( l_class )
+        then
+          return;
+        end if;
+        l_value_record.xPlacement := l_subt.matrix( l_glyph )( l_class ) - l_subt.data_list( l_current );
+        l_value_record.xPlacement := l_value_record.xPlacement + l_shape_run( i ).val_rec.xPlacement;
+        l_value_record.yPlacement := l_subt.matrix( - l_glyph )( l_class ) - l_subt.data_list( - l_current );
+        l_value_record.yPlacement := l_value_record.yPlacement + l_shape_run( i ).val_rec.yPlacement;
+        l_applied := true;
+        exit;
+      end loop;
+    end apply_lookup_type6;
+    --
+    procedure apply_lookups( p_idx pls_integer )
+    is
+    begin
+      l_applied := false;
+      for s in 1 .. l_lookup.subtables.count
+      loop
+        if not l_lookup.subtables( s ).coverage.exists( l_current )
+        then
+          continue;
+        end if;
+        l_subt := l_lookup.subtables( s );
+        --
+        case l_lookup.lookup_type
+          when 1 then apply_lookup_type1( p_idx );
+          when 2 then apply_lookup_type2( p_idx );
+          when 3 then apply_lookup_type3( p_idx );
+          when 4 then apply_lookup_type4( p_idx );
+          when 5 then apply_lookup_type5( p_idx );
+          when 6 then apply_lookup_type6( p_idx );
+          else null;
+        end case;
+        --
+        exit when l_applied;
+      end loop;
+      --
+    end apply_lookups;
+  begin
+    l_cnt := p_glyphs.count;
+    l_font := g_pdf.fonts( p_font_index );
+    l_last := g_pdf.font_width_cache( p_font_index )( g_pdf.font_width_cache( p_font_index ).last );
+    --
+    for i in 1 .. l_cnt
+    loop
+      l_current := p_glyphs( i );
+      l_shape.glyph := l_current;
+      l_shape.width := case when g_pdf.font_width_cache( p_font_index ).exists( l_current ) then g_pdf.font_width_cache( p_font_index )( l_current ) else l_last end;
+      l_shape_run( i ) := l_shape;
+    end loop;
+    --
+    if p_apply and g_pdf.gsub_gpos.exists( - p_font_index )
+    then
+      l_features := ordered_features( g_pdf.gsub_gpos( - p_font_index ), p_script, p_lang_sys, p_features, null );
+      for f in 0 .. l_features.count - 1
+      loop
+        l_feature := g_pdf.gsub_gpos( - p_font_index ).feature_list( l_features( f ) );
+        for l in 1 .. l_feature.lookups.count
+        loop
+          l_lookup := g_pdf.gsub_gpos( - p_font_index ).lookup_list( l_feature.lookups( l ) );
+          for i in 1 .. l_cnt
+          loop
+            l_current := p_glyphs( i );
+            if    false -- l_shape_run( i ).applied
+               or not l_lookup.coverage.exists( l_current )
+            then
+              continue;
+            end if;
+            l_value_record := l_null_val_rec;
+            apply_lookups( i );
+            if l_applied
+            then
+              l_shape_run( i ).applied := true;
+              l_shape_run( i ).val_rec := l_value_record;
+            end if;
+          end loop;
+        end loop;
+      end loop;
+    end if;
+    --
+    l_x := p_x;
+    l_y := p_y;
+    --
+    for i in 1 .. l_cnt
+    loop
+      l_shape := l_shape_run( case when p_rtl then l_cnt + 1 - i else i end );
+      l_glyph := g_pdf.font_old_new( p_font_index )( l_shape.glyph );
+      --
+      l_tmp_x := l_x;
+      if l_shape.val_rec.xPlacement != 0 or l_shape.val_rec.yPlacement != 0
+      then
+        l_tmp_x := l_x;
+        l_x := l_x + p_scaled_sz * ( l_shape.width + coalesce( l_shape.val_rec.xAdvance, 0 ) );
+        l_rv := l_rv || '> Tj 1 0 0 1 '
+          || to_char_round( l_tmp_x + coalesce( p_scaled_sz * l_shape.val_rec.xPlacement, 0 ) ) || ' '
+          || to_char_round( l_y + coalesce( p_scaled_sz * l_shape.val_rec.yPlacement, 0 ) ) || ' Tm '
+          || '<' || to_char( l_glyph, 'FM0XXX' ) || '> Tj 1 0 0 1 '
+          || to_char_round( l_x ) || ' '
+          || to_char_round( l_y ) || ' Tm <';
+      elsif l_shape.val_rec.xAdvance != 0 or l_shape.val_rec.yAdvance != 0
+      then
+        l_x := l_x + p_scaled_sz * ( l_shape.width + coalesce( l_shape.val_rec.xAdvance, 0 ) );
+        l_rv := l_rv || to_char( l_glyph, 'FM0XXX' ) || '> Tj 1 0 0 1 '
+          || to_char_round( l_x ) || ' '
+          || to_char_round( l_y + coalesce( p_scaled_sz * l_shape.val_rec.yAdvance, 0 ) ) || ' Tm <';
+      else
+        l_rv := l_rv || to_char( l_glyph, 'FM0XXX' );
+        l_x := l_x + p_scaled_sz * l_shape.width;
+      end if;
+    end loop;
+    --
+    return utl_raw.cast_to_raw( '<' || l_rv || '>' );
+  end apply_gpos;
+  --
+  function txt2raw
+    ( p_txt         varchar2 character set any_cs
+    , p_font_index  pls_integer
+    , p_fontsize    number
+    , p_x           number
+    , p_y           number
+    , p_script      varchar2
+    , p_lang_sys    varchar2
+    , p_features    tp_features
+    , p_apply_gsub  boolean
+    , p_apply_gpos  boolean
+    , p_rtl         boolean
+    )
+  return raw
+  is
+    l_notdef      raw(4);
+    l_len         pls_integer;
+    l_new         pls_integer;
+    l_glyph       pls_integer;
+    l_unicode     pls_integer;
+    l_font_index  pls_integer;
+    l_hex         varchar2(16);
+    l_font        tp_font;
+    l_glyphs      tp_pls_tab;
+    l_gsub_glyphs tp_pls_tab;
+    l_glyph2code  tp_pls_tab;
+    c_bs     constant varchar2(10) character set p_txt%charset := '\';
+    c_bs_to  constant varchar2(10) character set p_txt%charset := '\\';
+    c_lp     constant varchar2(10) character set p_txt%charset := '(';
+    c_lp_to  constant varchar2(10) character set p_txt%charset := '\(';
+    c_rp     constant varchar2(10) character set p_txt%charset := ')';
+    c_rp_to  constant varchar2(10) character set p_txt%charset := '\)';
+    c_lf     constant varchar2(10) character set p_txt%charset := chr(10);
+    c_lf_to  constant varchar2(10) character set p_txt%charset := null;  -- \n
+    c_ht     constant varchar2(10) character set p_txt%charset := chr(9);
+    c_ht_to  constant varchar2(10) character set p_txt%charset := c_tab_spaces;
+    c_cr     constant varchar2(10) character set p_txt%charset := chr(13);
+    c_cr_to  constant varchar2(10) character set p_txt%charset := null;  -- \r
   begin
     if p_txt is null
     then
@@ -5669,47 +10490,65 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     --
     if l_font.standard
     then
-      return utl_raw.concat( utl_raw.cast_to_raw( '(' )
-                           , pdf_string( string2raw( replace(
-                                                     replace(
-                                                     replace( p_txt
-                                                            , chr(9), rpad( ' ', c_tab_spaces ) )
-                                                            , chr(10) )
-                                                            , chr(13) )
-                                                   , 'WE8MSWIN1252'
-                                                   )
-                                       )
-                           , utl_raw.cast_to_raw( ')' )
-                           );
+-- https://sourceforge.net/p/pljrxml2pdf/discussion/general/thread/03abc63d13/#b621
+      return string2raw( '(' || replace(
+                                replace(
+                                replace(
+                                replace(
+                                replace(
+                                replace( p_txt
+                                       , c_bs, c_bs_to )
+                                       , c_lp, c_lp_to )
+                                       , c_rp, c_rp_to )
+                                       , c_ht, c_ht_to )
+                                       , c_lf, c_lf_to )
+                                       , c_cr, c_cr_to ) || ')'
+                       , 'WE8MSWIN1252'
+                       );
     end if;
     --
     l_notdef := utl_raw.cast_to_raw( coalesce( to_char( l_font.notdef, 'fm0XXX' ), 'FFFF' ) );
-    if bitand( l_font.flags, 4 ) > 0 and l_font.numGlyphs < 256
-    then
-      -- assume code 32, space maps to the first code from the font
-      l_remap_symbol := l_font.code2glyph.first - 32;
-    else
-      l_remap_symbol := 0;
-    end if;
-    l_tmp := string2raw( p_txt, 'AL16UTF16' );
-    for i in 1 .. length( p_txt )
+    l_len := length( p_txt );
+    for i in 1 .. l_len
     loop
-      l_unicode := to_number( utl_raw.substr( l_tmp, i * 2 - 1,  2 ), '0XXX' ) + l_remap_symbol;
-      if l_font.code2glyph.exists( l_unicode )
+      l_hex := string2raw( substr( p_txt, i, 1 ), 'AL16UTF16' );
+      if length( l_hex ) = 4
       then
-        l_glyph := l_font.code2glyph( l_unicode );
-        g_pdf.fonts( l_font_index ).used_glyphs( l_glyph ) := l_unicode;
-        l_rv := utl_raw.concat( l_rv
-                              , utl_raw.cast_to_raw( to_char( l_glyph, 'FM0XXX' ) )
-                              );
+        l_unicode := to_number( l_hex, '0XXX' );
       else
-        l_rv := utl_raw.concat( l_rv, l_notdef );
+        l_unicode := 1024 * to_number( substr( l_hex, 1,  4 ), '0XXX' ) + to_number( substr( l_hex, 5 ), '0XXX' ) - 56613888;
+      end if;
+      if g_pdf.font_code_cache( l_font_index ).exists( l_unicode )
+      then
+        l_glyph := g_pdf.font_code_cache( l_font_index )( l_unicode );
+        l_glyph2code( l_glyph ) := l_unicode;
+        l_glyphs( i ) := l_glyph;
+      else
+        l_glyphs( i ) := 0;
       end if;
     end loop;
-    return utl_raw.concat( utl_raw.cast_to_raw( '<' )
-                         , l_rv
-                         , utl_raw.cast_to_raw( '>' )
-                         );
+    --
+    l_gsub_glyphs := apply_gsub( l_font_index, l_glyphs, p_script, p_lang_sys, p_features, case when 'logs' member of p_features then '{"log":true}' else '{}' end, p_apply_gsub );
+    --
+    for i in 1 .. l_gsub_glyphs.count
+    loop
+      l_glyph := l_gsub_glyphs( i );
+      g_pdf.font_glyph_cache( l_font_index )( l_glyph ) := case when l_glyph2code.exists( l_glyph ) then l_glyph2code( l_glyph ) end;
+      if not g_pdf.font_old_new( l_font_index ).exists( l_glyph )
+      then
+        if l_font.cff and l_font.subset
+        then
+            l_new := g_pdf.font_glyph_cache( l_font_index ).count;
+            g_pdf.font_old_new( l_font_index )( l_glyph ) := l_new;
+            g_pdf.font_old_new( l_font_index )( - l_new ) := l_glyph;
+        else
+          g_pdf.font_old_new( l_font_index )( l_glyph ) := l_glyph;
+          g_pdf.font_old_new( l_font_index )( - l_glyph ) := l_glyph;
+        end if;
+      end if;
+    end loop;
+    --
+    return apply_gpos( l_font_index, l_gsub_glyphs, p_x, p_y, p_fontsize * l_font.unit_norm / 1000, p_script, p_lang_sys, p_features, p_apply_gpos, p_rtl );
   end txt2raw;
   --
   procedure put_raw
@@ -5725,21 +10564,8 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     l_sin number;
     l_cos number;
     l_rad number;
-    l_chg boolean;
     l_tmp varchar2(1000);
   begin
-    if (   p_font_index is not null
-       and p_font_index != coalesce( g_pdf.pages( g_pdf.current_page ).font_index, p_font_index )
-       and g_pdf.fonts.exists( p_font_index )
-       )
-       or
-       (   p_fontsize is not null
-       and p_fontsize != g_pdf.pages( g_pdf.current_page ).fontsize
-       )
-    then
-      l_chg := true;
-      font2page( p_font_index, p_fontsize );
-    end if;
     if p_color is not null
     then
       txt2page( rgb( p_color => p_color ) || 'rg' );
@@ -5765,10 +10591,6 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
                             )
               );
     --
-    if l_chg
-    then
-      font2page;
-    end if;
     if p_color is not null
     then
       if g_pdf.color is null
@@ -5780,6 +10602,60 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     end if;
   end put_raw;
   --
+  procedure put_txt_i
+    ( p_x           number
+    , p_y           number
+    , p_txt         varchar2 character set any_cs
+    , p_degrees_rot number
+    , p_font_index  pls_integer
+    , p_fontsize    number
+    , p_color       varchar2
+    , p_script      varchar2
+    , p_lang_sys    varchar2
+    , p_features    tp_features
+    , p_apply_gsub  boolean
+    , p_apply_gpos  boolean
+    , p_rtl         boolean
+    )
+  is
+  begin
+    if p_txt is null
+    then
+      return;
+    end if;
+    g_pdf.fonts_used := true;
+    put_raw( p_x, p_y
+           , txt2raw( p_txt, p_font_index, p_fontsize, p_x, p_y, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl )
+           , p_degrees_rot
+           , p_font_index
+           , p_fontsize
+           , p_color
+           );
+  end put_txt_i;
+  --
+  function get_features( p_options varchar2 )
+  return tp_features
+  is
+    l_cnt      pls_integer;
+    l_tmp      varchar2(32767);
+    l_features tp_features;
+  begin
+    l_cnt := xjv( p_options, 'features.length()' );
+    if l_cnt > 0
+    then
+      l_features := tp_features();
+      l_features.extend( l_cnt );
+      l_tmp := xjv( p_options, 'features' );
+      for i in 0 .. l_cnt - 1
+      loop
+        l_features( i + 1 ) := substr( l_tmp, instr( l_tmp, '"', 1, 1 + 2 * i ) + 1, 4 );
+      end loop;
+      return l_features;
+    else
+      return tp_features( 'kern', 'mark', 'mkmk', 'ccmp', 'liga', 'rlig', 'clig', 'calt', 'dist' );
+    end if;
+  end get_features;
+  --
   procedure put_txt
     ( p_x                number
     , p_y                number
@@ -5789,30 +10665,73 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_fontsize         number      := null
     , p_color            varchar2    := null
     , p_page_proc        pls_integer := null
+    , p_options          varchar2 character set any_cs := null
     )
   is
+    l_chg        boolean;
+    l_fontsize   number;
+    l_font_index pls_integer;
+    l_page       tp_page;
   begin
     if p_txt is not null
     then
       if p_page_proc is null
       then
-        g_pdf.fonts_used := true;
-        put_raw( p_x, p_y
-               , txt2raw( p_txt, p_font_index )
-               , p_degrees_rotation
-               , p_font_index
-               , p_fontsize
-               , p_color
-               );
+        if g_pdf.current_page is null
+        then
+          new_page;
+        end if;
+        l_page := g_pdf.pages( g_pdf.current_page );
+        if p_font_index is null
+        then
+          l_font_index := coalesce( g_pdf.current_font, l_page.font_index, g_pdf.fonts.first );
+        else
+          if not g_pdf.fonts.exists( p_font_index )
+          then
+            return;
+          end if;
+          l_font_index := p_font_index;
+        end if;
+        l_fontsize := coalesce( p_fontsize, l_page.fontsize, g_pdf.fonts( l_font_index ).fontsize, c_default_fontsize );
+        if    l_font_index != coalesce( l_page.font_index, - l_font_index )
+           or l_fontsize != coalesce( l_page.fontsize, - l_fontsize )
+        then
+          l_chg := true;
+          font2page( l_font_index, l_fontsize );
+        end if;
+        put_txt_i( p_x, p_y, p_txt, p_degrees_rotation, l_font_index, l_fontsize, p_color
+                 , xjv( p_options, 'script' ), xjv( p_options, 'langSys' )
+                 , get_features( p_options )
+                 , jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' )
+                 , jvs2b( p_options, 'RTL' )
+                 );
+        if l_chg
+        then
+          font2page;
+        end if;
       else
         add_page_proc( 10, p_page_proc
                      , p_nums  => tp_numbers( p_x, p_y, p_degrees_rotation, p_font_index, p_fontsize )
-                     , p_chars => tp_varchar2s( p_color, p_txt )
+                     , p_chars => tp_varchar2s( p_color, p_txt, p_options )
                      , p_nchar => case when isnchar( p_txt ) then p_txt end
                      );
       end if;
     end if;
   end put_txt;
+  --
+  procedure new_or_next_page
+  is
+    l_settings tp_settings;
+  begin
+    if g_pdf.current_page + 1 = g_pdf.pages.count
+    then
+      l_settings := g_pdf.pages( g_pdf.current_page ).settings;
+      new_page;
+      g_pdf.pages( g_pdf.current_page ).settings := l_settings;
+    else
+      set_current_page( g_pdf.current_page + 1 );
+    end if;
+  end new_or_next_page;
   --
   procedure wti
     ( p_txt               varchar2 character set any_cs
@@ -5824,6 +10743,7 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_ymax              number
     , p_font_index        pls_integer
     , p_fontsize          number
+    , p_line_spacing      number
     , p_color             varchar2
     , p_align             varchar2
     , p_dry_run           boolean
@@ -5831,6 +10751,14 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_new_y      in out number
     , p_lines      in out pls_integer
     , p_page_break in out boolean
+, p_options varchar2 := null
+    , p_script      varchar2    := null
+    , p_lang_sys    varchar2    := null
+    , p_features    tp_features := null
+    , p_apply_gsub  boolean     := false
+    , p_apply_gpos  boolean     := false
+    , p_rtl         boolean     := false
+
     )
   is
     l_len    number;
@@ -5843,23 +10771,22 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
       )
     is
     begin
-      wti( p_txt, p_x, p_y, p_xmin, p_xmax, p_ymin, p_ymax, p_font_index, p_fontsize, p_color, p_align, p_dry_run, p_new_x, p_new_y, p_lines, p_page_break );
+      wti( p_txt, p_x, p_y, p_xmin, p_xmax, p_ymin, p_ymax, p_font_index, p_fontsize, p_line_spacing, p_color, p_align, p_dry_run, p_new_x, p_new_y, p_lines, p_page_break
+         , p_options, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+         );
     end;
     --
     procedure line_break( p_p2 varchar2 character set any_cs )
     is
-      l_settings tp_settings;
     begin
-      p_new_y := p_new_y - p_fontsize;
+      p_new_y := p_new_y - p_line_spacing;
       p_lines := coalesce( p_lines, 1 ) + 1;
       if p_new_y < p_ymin
       then
         p_page_break := true;
         if not p_dry_run
         then
-          l_settings := g_pdf.pages( g_pdf.current_page ).settings;
-          new_page;
-          g_pdf.pages( g_pdf.current_page ).settings := l_settings;
+          new_or_next_page;
         end if;
         wt( ltrim( p_p2 ), p_xmin, p_ymax );
       else
@@ -5918,11 +10845,17 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
       then
         case lower( substr( p_align, 1, 1 ) )
           when 'r' then
-            put_txt( p_xmax - l_len, p_y, p_txt, null, p_font_index, p_fontsize, p_color );
+            put_txt_i( p_xmax - l_len, p_y, p_txt, null, p_font_index, p_fontsize, p_color
+                     , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     );
           when 'c' then
-            put_txt( ( p_x + p_xmax - l_len ) / 2, p_y, p_txt, null, p_font_index, p_fontsize, p_color );
+            put_txt_i( ( p_x + p_xmax - l_len ) / 2, p_y, p_txt, null, p_font_index, p_fontsize, p_color
+                     , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     );
           else
-            put_txt( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color );
+            put_txt_i( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color
+                     , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     );
         end case;
       end if;
       p_new_x := p_x + l_len;
@@ -5962,6 +10895,7 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
     , p_color      varchar2    := null
+    , p_options    varchar2 character set any_cs := null
     )
   is
     l_fontsize   number;
@@ -5970,25 +10904,31 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     l_font_index pls_integer;
     l_settings   tp_settings;
   begin
-    l_font_index := gfi( p_font_index );
-    l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize );
     if g_pdf.current_page is null
     then
       new_page;
     end if;
+    l_font_index := gfi( p_font_index );
+    l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize );
     l_settings := g_pdf.pages( g_pdf.current_page ).settings;
     if p_txt is null
     then
       g_pdf.x := coalesce( p_x, g_pdf.x, l_settings.margin_left );
       g_pdf.y := coalesce( p_y, g_pdf.y, l_settings.page_height - l_settings.margin_top - l_fontsize );
     else
-      wti( replace( p_txt, chr(9), rpad( ' ', c_tab_spaces ) )
+      if g_pdf.current_page is null
+      then
+        new_page;
+      end if;
+      font2page_i( l_font_index, l_fontsize );
+      wti( replace( p_txt, chr(9), c_tab_spaces )
          , coalesce( p_x, g_pdf.x, l_settings.margin_left )
          , coalesce( p_y, g_pdf.y, l_settings.page_height - l_settings.margin_top - l_fontsize )
          , l_settings.margin_left, l_settings.page_width - l_settings.margin_left
          , l_settings.margin_bottom, l_settings.page_height - l_settings.margin_top - l_fontsize
-         , l_font_index, l_fontsize, p_color, null
+         , l_font_index, l_fontsize, g_pdf.line_spacing_factor * l_fontsize, p_color, null
          , false, g_pdf.x, g_pdf.y, l_lines, l_page_break
+         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
          );
     end if;
   exception
@@ -5996,98 +10936,29 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
       raise_application_error( -20023, 'Text "'|| p_txt || '" does not fit in allowed space (' || to_char_round( l_settings.page_width - l_settings.margin_left, 0 ) || ').' );
   end write_txt;
   --
-  procedure link_int
-    ( p_url varchar2
-    , p_x1  number
-    , p_y1  number
-    , p_x2  number
-    , p_y2  number
-    )
-  is
-    l_link tp_link;
-    l_idx  pls_integer;
-  begin
-    l_idx := g_pdf.links.count + 1;
-    l_link.url  := p_url;
-    l_link.lt_x := p_x1;
-    l_link.lt_y := p_y1;
-    l_link.rb_x := p_x2;
-    l_link.rb_y := p_y2;
-    g_pdf.links( l_idx ) := l_link;
-    g_pdf.pages( g_pdf.current_page ).links( g_pdf.pages( g_pdf.current_page ).links.count + 1 ) := l_idx;
-  end link_int;
-  --
-  procedure link
-    ( p_txt        varchar2 character set any_cs
-    , p_url        varchar2
-    , p_x          number
-    , p_y          number
-    , p_font_index pls_integer := null
-    , p_fontsize   number      := null
-    , p_color      varchar2    := null
-    , p_page_proc  pls_integer := null
-    )
-  is
-    l_font       tp_font;
-    l_top        number;
-    l_fontsize   number;
-    l_font_index pls_integer;
-  begin
-    if p_txt is null or p_url is null
-    then
-      return;
-    end if;
-    if p_page_proc is null
-    then
-      l_font_index := gfi( p_font_index );
-      l_font := g_pdf.fonts( l_font_index );
-      l_fontsize := coalesce( p_fontsize, l_font.fontsize, c_default_fontsize );
-      l_top := ( 0.5 * l_font.linegap + l_font.ascent ) * l_fontsize / 1000;
-      put_txt( p_x, p_y, p_txt, null, l_font_index, p_fontsize, p_color );
-      link_int( p_url, p_x, p_y + l_top
-              , p_x + str_len( p_txt || '  ', l_font_index, l_fontsize )
-              , p_y + l_top - l_fontsize
-              );
-    else
-      add_page_proc( 12, p_page_proc
-                   , p_nums  => tp_numbers( p_x, p_y, p_font_index, p_fontsize )
-                   , p_chars => tp_varchar2s( p_url, p_color, p_txt )
-                   , p_nchar => case when isnchar( p_txt ) then p_txt end
-                   );
-    end if;
-  end link;
-  --
   procedure fill_with_borders
     ( p_x1 number
     , p_y1 number
     , p_x2 number
     , p_y2 number
     , p_widths tp_num_tab
-    , p_odd_color  varchar2
-    , p_even_color varchar2
+    , p_fill_color varchar2
     , p_line_color varchar2
     , p_line_width number
     )
   is
     l_tmp_x number;
   begin
-    if p_odd_color is not null
+    if p_fill_color is not null
     then
       rect( p_x1, p_y1, p_x2 - p_x1, p_y2 - p_y1
-          , case when p_line_width = 0 then p_odd_color else p_line_color end
-          , p_odd_color, p_line_width
-          );
-    end if;
-    if p_even_color is not null
-    then
-      rect( p_x1, p_y1, p_x2 - p_x1, p_y2 - p_y1
-          , case when p_line_width = 0 then p_even_color else p_line_color end
-          , p_even_color, p_line_width
+          , case when p_line_width = 0 then p_fill_color else p_line_color end
+          , p_fill_color, p_line_width
           );
     end if;
     if coalesce( p_line_width, 1 ) > 0
     then
-      path( tp_numbers( p_x1, p_y1, p_x2, p_y1, p_x2, p_y2, p_x1, p_y2, p_x1, p_y1 )
+      path( tp_numbers( p_x1, p_y1, p_x2, p_y1, p_x2, p_y2, p_x1, p_y2, p_x1, p_y1, p_x2, p_y1 )
           , p_line_width, p_line_color
           );
       l_tmp_x := p_x1;
@@ -6099,106 +10970,19 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     end if;
   end fill_with_borders;
   --
-  procedure multi_cell
-    ( p_txt        varchar2 character set any_cs
-    , p_x          number
-    , p_y          number
-    , p_width      number      := null
-    , p_padding    number      := null
-    , p_font_index pls_integer := null
-    , p_fontsize   number      := null
-    , p_txt_color  varchar2    := null
-    , p_fill_color varchar2    := null
-    , p_line_color varchar2    := null
-    , p_align      varchar2    := null
-    , p_line_width number      := null
-    , p_url        varchar2    := null
-    , p_page_proc  pls_integer := null
-    )
+  function get_font_top( p_font tp_font, p_size number )
+  return number
   is
-    l_x          number;
-    l_y          number;
-    l_top        number;
-    l_width      number;
-    l_new_x      number;
-    l_new_y      number;
-    l_lpadding   number;
-    l_rpadding   number;
-    l_fontsize   number;
-    l_page_break boolean;
-    l_lines      pls_integer;
-    l_font_index pls_integer;
-    l_font       tp_font;
-    l_widths tp_num_tab;
-    l_settings   tp_settings;
   begin
-    if p_page_proc is null
-    then
-      l_font_index := gfi( p_font_index );
-      l_font := g_pdf.fonts( l_font_index );
-      l_fontsize := coalesce( p_fontsize, l_font.fontsize );
-      if g_pdf.current_page is null
-      then
-        new_page;
-      end if;
-      --
-      if p_x is null
-      then
-        l_settings := g_pdf.pages( g_pdf.current_page ).settings;
-        l_x := l_settings.margin_left;
-      else
-        l_x := p_x;
-      end if;
-      l_lpadding := coalesce( p_padding, str_len( ' ', l_font_index, l_fontsize ) );
-      if p_width is null
-      then
-        if p_x is not null
-        then
-          l_settings := g_pdf.pages( g_pdf.current_page ).settings;
-        end if;
-        l_width := l_settings.page_width - l_settings.margin_right - l_x;
-      else
-        l_width := p_width;
-      end if;
-      l_rpadding := coalesce( p_padding, str_len( ' ', l_font_index, l_fontsize ) );
-      wti( replace( p_txt, chr(9), rpad( ' ', c_tab_spaces ) )
-         , l_x + l_lpadding
-         , p_y
-         , l_x + l_lpadding, l_x + l_width - l_rpadding
-         , null, null
-         , l_font_index, l_fontsize, p_txt_color, p_align
-         , true, l_new_x, l_new_y, l_lines, l_page_break
-         );
-      l_top := ( 0.5 * l_font.linegap + l_font.ascent ) * l_fontsize / 1000;
-      l_widths( 1 ) := l_width;
-      fill_with_borders
-        ( l_x, p_y + l_top
-        , l_x + l_width, p_y + l_top - l_fontsize * coalesce( l_lines, 1 )
-        , l_widths, p_fill_color, null, p_line_color, p_line_width
-        );
-      wti( replace( p_txt, chr(9), rpad( ' ', c_tab_spaces ) )
-         , l_x + l_lpadding
-         , p_y
-         , l_x + l_lpadding, l_x + l_width - l_rpadding
-         , null, null
-         , l_font_index, l_fontsize, p_txt_color, p_align
-         , false, l_new_x, l_new_y, l_lines, l_page_break
-         );
-      if p_url is not null
-      then
-        link_int( p_url, l_x, p_y + l_top, l_x + l_width, p_y + l_top - coalesce( l_lines, 1 ) * l_fontsize );
-      end if;
-    else
-      add_page_proc( 11, p_page_proc
-                   , p_nums  => tp_numbers( p_x, p_y, p_width, p_padding, p_font_index, p_fontsize, p_line_width )
-                   , p_chars => tp_varchar2s( p_txt_color, p_fill_color, p_line_color, p_align, p_txt, p_url )
-                   , p_nchar => case when isnchar( p_txt ) then p_txt end
-                   );
-    end if;
-  exception
-    when e_no_fit then
-      raise_application_error( -20023, 'Text "'|| p_txt || '" does not fit in allowed space (' || to_char_round( l_width, 0 ) || ').' );
-  end multi_cell;
+    return  ( 0.5 * p_font.linegap + p_font.ascent ) * p_size / 1000;
+  end get_font_top;
+  --
+  function get_font_bottom( p_font tp_font, p_size number )
+  return number
+  is
+  begin
+    return ( 0.5 * p_font.linegap + abs( p_font.descent ) ) * p_size / 1000;
+  end get_font_bottom;
   --
   procedure handle_widths
     ( p_widths   tp_numbers
@@ -6206,6 +10990,7 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_x        number
     , p_settings tp_settings
     , p_out      in out tp_num_tab
+    , p_width    number := null
     )
   is
     l_cnt   pls_integer;
@@ -6214,7 +10999,7 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     p_out.delete;
     if p_widths is null or p_widths.count < p_cnt
     then
-      l_width := p_settings.page_width - p_settings.margin_right - p_x;
+      l_width := coalesce( p_width, p_settings.page_width - p_settings.margin_right - p_x );
       if p_widths is null
       then
         l_cnt := 0;
@@ -6226,7 +11011,7 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
           p_out( i ) := p_widths( i );
         end loop;
       end if;
-      l_width := l_width / ( p_cnt - l_cnt );
+      l_width := greatest( l_width / ( p_cnt - l_cnt ), 0 );
       for i in l_cnt + 1 .. p_cnt
       loop
         p_out( i ) := l_width;
@@ -6239,6 +11024,200 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     end if;
   end handle_widths;
   --
+  procedure get_padding
+    ( p_options varchar2 character set any_cs
+    , p_top     out number
+    , p_bottom  out number
+    , p_left    out number
+    , p_right   out number
+    , p_array   varchar2 := null
+    , p_pre     varchar2 := null
+    , p_padding number   := null
+    )
+  is
+    l_tmp number;
+    function pre( p_initial varchar2 )
+    return varchar2
+    is
+    begin
+      return p_array || case when p_pre is null
+                          then p_initial
+                          else p_pre || upper( p_initial )
+                        end;
+    end;
+  begin
+    l_tmp := coalesce( p_padding, jvs2n( p_options, pre( 'p' ) || 'adding' ) );
+    if l_tmp is not null
+    then
+      p_top    := l_tmp;
+      p_bottom := l_tmp;
+      p_left   := l_tmp;
+      p_right  := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 'h' ) || 'orizontalPadding' );
+    if l_tmp is not null
+    then
+      p_left  := l_tmp;
+      p_right := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 'v' ) || 'erticalPadding' );
+    if l_tmp is not null
+    then
+      p_top    := l_tmp;
+      p_bottom := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 't' ) || 'opPadding' );
+    if l_tmp is not null
+    then
+      p_top := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 'b' ) || 'ottomPadding' );
+    if l_tmp is not null
+    then
+      p_bottom := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 'l' ) || 'eftPadding' );
+    if l_tmp is not null
+    then
+      p_left := l_tmp;
+    end if;
+    l_tmp := jvs2n( p_options, pre( 'r' ) || 'ightPadding' );
+    if l_tmp is not null
+    then
+      p_right := l_tmp;
+    end if;
+  end get_padding;
+  --
+  procedure multi_cell
+    ( p_txt        varchar2 character set any_cs
+    , p_x          number
+    , p_y          number
+    , p_width      number      := null
+    , p_height     number      := null
+    , p_padding    number      := null
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    , p_txt_color  varchar2    := null
+    , p_fill_color varchar2    := null
+    , p_line_color varchar2    := null
+    , p_align      varchar2    := null
+    , p_line_width number      := null
+    , p_url        varchar2    := null
+    , p_options    varchar2 character set any_cs := null
+    , p_page_proc  pls_integer := null
+    )
+  is
+    l_x          number;
+  --  l_y          number;
+    l_lw         number;
+    l_bp         number;
+    l_lp         number;
+    l_rp         number;
+    l_tp         number;
+    l_mt         number;
+    l_mh         number;
+    l_width      number;
+    l_tmp_x      number;
+    l_tmp_y      number;
+    l_fontsize   number;
+    l_line_sp    number;
+    l_lines      pls_integer;
+    l_font_index pls_integer;
+    l_text_color varchar2(32767);
+    l_fill_color varchar2(32767);
+    l_line_color varchar2(32767);
+    l_font       tp_font;
+    l_widths     tp_num_tab;
+    l_settings   tp_settings;
+    --
+    procedure wt( p_dry_run boolean )
+    is
+      l_pb boolean;
+    begin
+      if not p_dry_run
+      then
+        font2page_i( l_font_index, l_fontsize );
+      end if;
+      wti( replace( p_txt, chr(9), c_tab_spaces )
+         , l_x + l_lp + 0.5 * l_lw, p_y - l_mt - 0.5 * l_lw - l_tp
+         , l_x + l_lp + 0.5 * l_lw, l_x + l_width - l_rp - 0.5 * l_lw
+         , null, null
+         , l_font_index, l_fontsize, l_line_sp
+         , l_text_color, null
+         , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
+         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
+         );
+      exception
+        when e_no_fit then
+          raise_application_error( -20023, 'Text "'|| p_txt  || '" does not fit in allowed space (' || to_char_round( l_width, 0 ) || ').' );
+      end wt;
+  begin
+    if p_page_proc is null
+    then
+      if g_pdf.current_page is null
+      then
+        new_page;
+      end if;
+      l_settings := g_pdf.pages( g_pdf.current_page ).settings;
+      --
+      l_lw := coalesce( p_line_width
+                      , jvs2n( p_options, 'lineWidth' )
+                      , c_default_line_width
+                      );
+      l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
+      l_font := g_pdf.fonts( l_font_index );
+      l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+      l_fill_color := coalesce( p_fill_color, xjv( p_options, 'fillColor' ) );
+      l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
+      l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
+      get_padding( p_options, l_tp, l_bp, l_lp, l_rp, p_padding => p_padding );
+      l_tp := coalesce( l_tp, 0 );
+      l_bp := coalesce( l_bp, 0 );
+      l_lp := coalesce( l_lp, 2 );
+      l_rp := coalesce( l_rp, 2 );
+      l_mt := get_font_top( l_font, l_fontsize );
+      l_mh := coalesce( jvs2n( p_options, 'minimalHeight' ), 0 );
+      l_mh := greatest( l_mh, get_font_bottom( l_font, l_fontsize ) + l_mt );
+      l_line_sp := coalesce( jvs2n( p_options, 'lineSpacing' )
+                           , l_fontsize * coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor )
+                           );
+      --
+      l_x := coalesce( p_x, l_settings.margin_left );
+      l_width := coalesce( p_width, jvs2n( p_options, 'width' ), l_settings.page_width - l_settings.margin_right - l_x );
+      l_widths( 1 ) := l_width;
+      --
+      wt( true );
+      l_mh := greatest( coalesce( p_height, jvs2n( p_options, 'height' ), 0 ), l_mh + l_line_sp * ( coalesce( l_lines, 1 ) - 1 ) );
+      fill_with_borders
+        ( l_x, p_y
+        , l_x + l_width, p_y - l_mh - l_lw - l_bp - l_tp
+        , l_widths, l_fill_color, l_line_color, l_lw
+        );
+      wt( false );
+      if p_url is not null
+      then
+        annot( p_subtype    => 'Link'
+             , p_txt        => null
+             , p_x          => l_x
+             , p_y          => p_y - l_mt - 0.5 * l_lw - l_tp
+             , p_font_index => l_font_index
+             , p_fontsize   => l_fontsize
+             , p_url        => p_url
+             , p_put_txt    => false
+             );
+      end if;
+    else
+      add_page_proc( 11, p_page_proc
+                   , p_nums  => tp_numbers( p_x, p_y, p_width, p_padding, p_font_index, p_fontsize, p_line_width )
+                   , p_chars => tp_varchar2s( p_txt_color, p_fill_color, p_line_color, p_align, p_txt, p_url, p_options )
+                   , p_nchar => case when isnchar( p_txt ) then p_txt end
+                   );
+    end if;
+  exception
+    when e_no_fit then
+      raise_application_error( -20023, 'Text "'|| p_txt || '" does not fit in allowed space (' || to_char_round( l_width, 0 ) || ').' );
+  end multi_cell;
+  --
   procedure table_row
     ( p_txt        tp_varchar2s
     , p_x          number
@@ -6247,122 +11226,176 @@ dbms_output.put_line( '********************* name *********** ' || substr( l_buf
     , p_padding    number      := null
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
+    , p_min_height number      := null
     , p_align      varchar2    := null
     , p_txt_color  varchar2    := null
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
     , p_line_width number      := null
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi         tp_pls_tab  := c_null_pls_tab
-    , p_fs         tp_num_tab  := c_null_num_tab
-    , p_al         tp_txt_tab  := c_null_txt_tab
-    , p_tc         tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi         tp_pls_tab  := c_null_pls_tab
-    , p_fs         tp_num_tab  := c_null_num_tab
-    , p_al         tp_txt_tab  := c_null_txt_tab
-    , p_tc         tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi         tp_pls_tab  := tp_pls_tab()
-    , p_fs         tp_num_tab  := tp_num_tab()
-    , p_al         tp_txt_tab  := tp_txt_tab()
-    , p_tc         tp_txt_tab  := tp_txt_tab()
-$END
+    , p_options    varchar2 character set any_cs := null
     )
   is
     l_x          number;
-    l_y          number;
-    l_new_x      number;
-    l_new_y      number;
+    l_lw         number;
+    l_bp         number;
+    l_lp         number;
+    l_rp         number;
+    l_tp         number;
+    l_mt         number;
+    l_mh         number;
+    l_tmp        number;
     l_tmp_x      number;
-    l_max_top    number;
-    l_max_height number;
-    l_padding    number;
+    l_tmp_y      number;
+    l_min_height number;
     l_fontsize   number;
-    l_page_break boolean;
+    l_col_fs     number;
+    l_line_sp    number;
+    l_line_spf   number;
+    l_row_width  number;
+    l_y_offset   number;
     l_cnt        pls_integer;
     l_lines      pls_integer;
+    l_col_fi     pls_integer;
     l_font_index pls_integer;
+    l_pb         boolean;
+    l_col_path   varchar2(100);
+    l_text_color varchar2(32767);
+    l_fill_color varchar2(32767);
+    l_line_color varchar2(32767);
     l_font       tp_font;
+    l_col_font   tp_font;
     l_fi         tp_pls_tab;
     l_fs         tp_num_tab;
+    l_cls        tp_num_tab;
+    l_cbp        tp_num_tab;
+    l_clp        tp_num_tab;
+    l_crp        tp_num_tab;
+    l_ctp        tp_num_tab;
     l_widths     tp_num_tab;
     l_settings   tp_settings;
+    --
+    procedure wt( p_idx pls_integer, p_dry_run boolean )
+    is
+    begin
+      if not p_dry_run
+      then
+        font2page_i( l_fi( p_idx ), l_fs( p_idx ) );
+      end if;
+      wti( replace( p_txt( p_idx ), chr(9), c_tab_spaces )
+         , l_x + l_clp( p_idx ) + 0.5 * l_lw, p_y - l_y_offset
+         , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
+         , null, null
+         , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx )
+         , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end, null
+         , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
+         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
+         );
+      exception
+        when e_no_fit then
+          raise_application_error( -20023, 'Text "'|| p_txt( p_idx ) || '" does not fit in allowed space (' || to_char_round( l_widths( p_idx ), 0 ) || ').' );
+      end wt;
   begin
     l_cnt := p_txt.count;
-    l_font_index := gfi( p_font_index );
-    l_font := g_pdf.fonts( l_font_index );
-    l_fontsize := coalesce( p_fontsize, l_font.fontsize );
-    l_padding := coalesce( p_padding, str_len( ' ', l_font_index, l_fontsize ) );
     if g_pdf.current_page is null
     then
       new_page;
     end if;
-    --
     l_settings := g_pdf.pages( g_pdf.current_page ).settings;
-    l_x := coalesce( p_x, l_settings.margin_left );
-    handle_widths( p_widths, l_cnt, l_x, l_settings, l_widths );
     --
-    l_new_x := l_x;
-    l_max_top := ( 0.5 * l_font.linegap + l_font.ascent ) * l_fontsize / 1000;
-    l_max_height := 0;
+    l_lw := coalesce( p_line_width
+                    , jvs2n( p_options, 'lineWidth' )
+                    , c_default_line_width
+                    );
+    l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
+    l_font := g_pdf.fonts( l_font_index );
+    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+    l_fill_color := xjv( p_options, 'fillColor' );
+    l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
+    l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
+    get_padding( p_options, l_tp, l_bp, l_lp, l_rp, p_padding => p_padding );
+    l_tp := coalesce( l_tp, 0 );
+    l_bp := coalesce( l_bp, 0 );
+    l_lp := coalesce( l_lp, 2 );
+    l_rp := coalesce( l_rp, 2 );
+    l_min_height := coalesce( p_min_height, jvs2n( p_options, 'minimalHeight' ), 0 );
+    l_min_height := greatest( l_min_height, l_bp + get_font_bottom( l_font, l_fontsize ) + get_font_top( l_font, l_fontsize ) + l_tp );
+    l_line_sp := jvs2n( p_options, 'lineSpacing' );
+    l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
+    --
+    l_x := coalesce( p_x, l_settings.margin_left );
+    if     p_widths is null
+       and (  jvs2n( p_options, 'widths.length()' ) > 0
+           or jvs2n( p_options, 'columns[0].width' ) > 0
+           )
+    then
+      for i in 1 .. l_cnt
+      loop
+        l_widths( i ) := coalesce( jvs2n( p_options, 'widths[' || to_char( i - 1 ) || ']' )
+                                 , jvs2n( p_options, 'columns[' || to_char( i - 1 ) || '].width' )
+                                 , 5
+                                 );
+      end loop;
+    else
+      handle_widths( p_widths, l_cnt, l_x, l_settings, l_widths, jvs2n( p_options, 'width' ) );
+    end if;
+    l_row_width := 0;
     for i in 1 .. l_cnt
     loop
-      if p_fi.exists( i )
-      then
-        l_fi( i ) := p_fi( i );
-      else
-        l_fi( i ) := l_font_index;
-      end if;
-      if p_fs.exists( i )
-      then
-        l_fs( i ) := p_fs( i );
-      else
-        l_fs( i ) := l_fontsize;
-      end if;
-      if p_fi.exists( i ) or p_fs.exists( i )
-      then
-        l_max_top := greatest( l_max_top, ( 0.5 * l_font.linegap + l_font.ascent ) * l_fs( i ) / 1000 );
-      end if;
-      begin
-        wti( replace( p_txt( i ), chr(9), rpad( ' ', c_tab_spaces ) )
-           , l_new_x + l_padding
-           , p_y
-           , l_new_x + l_padding, l_new_x + l_widths( i ) - l_padding
-           , null, null
-           , l_fi( i ), l_fs( i ), null, null
-           , true, l_tmp_x, l_new_y, l_lines, l_page_break
-           );
-      exception
-        when e_no_fit then
-          raise_application_error( -20023, 'Text "'|| p_txt( i ) || '" does not fit in allowed space (' || to_char_round( l_widths( i ), 0 ) || ').' );
-      end;
-      l_new_x := l_new_x + l_widths( i );
-      l_max_height := greatest( l_max_height, l_fs( i ) * coalesce( l_lines, 1 ) );
+      l_row_width := l_row_width + l_widths( i );
     end loop;
     --
+    l_mt := 0;
+    l_mh := l_min_height;
+    l_y_offset := 0;
+    for c in 1 .. l_cnt
+    loop
+      l_col_path := 'columns[' || to_char( c - 1 ) || '].';
+      l_col_fs := jvs2n( p_options, l_col_path || 'fontSize' );
+      l_col_fi := jvs2n( p_options, l_col_path || 'fontIndex' );
+      if l_col_fi is null or ( l_col_fi != l_font_index and not g_pdf.fonts.exists( l_col_fi ) )
+      then
+        l_col_fi := l_font_index;
+      end if;
+      l_fi( c ) := l_col_fi;
+      if l_col_fs is null
+      then
+        l_col_fs := l_fontsize;
+      end if;
+      l_fs( c ) := l_col_fs;
+      get_padding( p_options, l_ctp( c ), l_cbp( c ), l_clp( c ), l_crp( c ), l_col_path );
+      l_ctp( c ) := coalesce( l_ctp( c ), l_tp );
+      l_cbp( c ) := coalesce( l_cbp( c ), l_bp );
+      l_clp( c ) := coalesce( l_clp( c ), l_lp );
+      l_crp( c ) := coalesce( l_crp( c ), l_rp );
+      l_cls( c ) := coalesce( jvs2n( p_options, l_col_path || 'lineSpacing' )
+                            , l_col_fs * jvs2n( p_options, l_col_path || 'lineSpacingFactor' )
+                            , l_line_sp
+                            , l_col_fs * l_line_spf
+                            );
+      --
+      l_col_font := g_pdf.fonts( l_col_fi );
+      l_tmp := get_font_top( l_col_font, l_col_fs ) + l_ctp( c );
+      l_mt := greatest( l_mt, l_tmp );
+      l_tmp := l_tmp + get_font_bottom( l_col_font, l_col_fs ) + l_cbp( c );
+      wt( c, true );
+      l_mh := greatest( l_mh, l_tmp + l_cls( c ) * ( coalesce( l_lines, 1 ) - 1 ) );
+    end loop;
+    --
+    if lower( xjv( p_options, 'yOffset' ) ) = 'true'
+    then
+      l_y_offset := l_mt + 0.5 * l_lw;
+    end if;
+    --
     fill_with_borders
-      ( l_x, p_y + l_max_top
-      , l_new_x, p_y + l_max_top - l_max_height
-      , l_widths, p_fill_color, null, p_line_color, p_line_width
+      ( l_x, p_y + l_mt + 0.5 * l_lw - l_y_offset
+      , l_x + l_row_width, p_y + l_mt - l_mh - 0.5 * l_lw - l_y_offset
+      , l_widths, l_fill_color, l_line_color, l_lw
       );
     --
-    l_new_x := l_x;
-    for i in 1 .. l_cnt
+    for c in 1 .. l_cnt
     loop
-      wti( replace( p_txt( i ), chr(9), rpad( ' ', c_tab_spaces ) )
-         , l_new_x + l_padding
-         , p_y
-         , l_new_x + l_padding, l_new_x + l_widths( i ) - l_padding
-         , null, null
-         , l_fi( i ), l_fs( i )
-         , case when p_tc.exists( i ) then p_tc( i ) else p_txt_color end
-         , case when p_al.exists( i ) then p_al( i ) else p_align end
-         , false, l_tmp_x, l_new_y, l_lines, l_page_break
-         );
-      l_new_x := l_new_x + l_widths( i );
+      wt( c, false );
+      l_x := l_x + l_widths( c );
     end loop;
   end table_row;
   --
@@ -6374,111 +11407,174 @@ $END
     , p_widths        tp_numbers
     , p_font_index    pls_integer
     , p_fontsize      number
-    , p_header_fi     pls_integer
-    , p_header_fs     number
-    , p_header_txt_c  varchar2
-    , p_header_color  varchar2
-    , p_header_repeat boolean
+    , p_options       varchar2 character set any_cs
     , p_txt_color     varchar2
     , p_odd_color     varchar2
     , p_even_color    varchar2
     , p_line_color    varchar2
     , p_line_width    number
-    , p_fi            tp_pls_tab
-    , p_fs            tp_num_tab
-    , p_al            tp_txt_tab
-    , p_fmt           tp_txt_tab
+    , p_min_height    number
     )
   is
-    l_y          number;
-    l_tmp_x      number;
-    l_tmp_y      number;
-    l_start_x    number;
-    l_padding    number;
-    l_max_top    number;
-    l_max_height number;
-    l_line_width number;
-    l_fontsize   number;
-    l_page_break boolean;
-    l_lines      pls_integer;
-    l_idx        pls_integer;
-    l_row_nr     pls_integer;
-    l_font_index pls_integer;
-    l_font       tp_font;
-    l_settings   tp_settings;
-    l_col_cnt    integer;
-    l_desc_tab   dbms_sql.desc_tab2;
-    l_b          blob;
-    l_d          date;
-    l_n          number;
-    l_ts         timestamp;
-    l_tsz        timestamp with time zone;
-    l_tslz       timestamp with local time zone;
-    l_r          raw(32767);
-    l_v          varchar2(32767);
-    l_nv         nvarchar2(32767);
-    l_fi         tp_pls_tab;
-    l_fs         tp_num_tab;
-    l_widths     tp_num_tab;
+    l_y             number;
+    l_lw            number;
+    l_bp            number;
+    l_lp            number;
+    l_rp            number;
+    l_tp            number;
+    l_ft            number;
+    l_fb            number;
+    l_tmp           number;
+    l_tmp_x         number;
+    l_tmp_y         number;
+    l_start_x       number;
+    l_max_top       number;
+    l_max_height    number;
+    l_min_height    number;
+    l_line_spacing  number;
+    l_line_width    number;
+    l_fontsize      number;
+    l_col_fs        number;
+    l_line_sp       number;
+    l_line_spf      number;
+    l_page_break    boolean;
+    l_header        boolean;
+    l_header_repeat boolean;
+    l_idx           pls_integer;
+    l_lines         pls_integer;
+    l_col_fi        pls_integer;
+    l_row_nr        pls_integer;
+    l_font_index    pls_integer;
+    l_col_path      varchar2(100);
+    l_num_fmt       varchar2(256);
+    l_date_fmt      varchar2(256);
+    l_text_color    varchar2(32767);
+    l_fill_color    varchar2(32767);
+    l_line_color    varchar2(32767);
+    l_odd_color     varchar2(32767);
+    l_even_color    varchar2(32767);
+    l_options       varchar2(32767);
+    l_script        varchar2(10);
+    l_lang_sys      varchar2(10);
+    l_apply_gsub    boolean;
+    l_apply_gpos    boolean;
+    l_rtl           boolean;
+    l_features      tp_features;
+    l_font          tp_font;
+    l_col_font      tp_font;
+    l_settings      tp_settings;
+    l_col_cnt       integer;
+    l_desc_tab      dbms_sql.desc_tab2;
+    l_b             blob;
+    l_d             date;
+    l_n             number;
+    l_ts            timestamp;
+    l_tsz           timestamp with time zone;
+    l_tslz          timestamp with local time zone;
+    l_r             raw(32767);
+    l_v             varchar2(32767);
+    l_nv            nvarchar2(32767);
+    l_ign_gsub      boolean;
+    l_ign_gpos      boolean;
+    l_fi            tp_pls_tab;
+    l_fs            tp_num_tab;
+    l_mh            tp_num_tab;
+    l_cls           tp_num_tab;
+    l_cbp           tp_num_tab;
+    l_clp           tp_num_tab;
+    l_crp           tp_num_tab;
+    l_ctp           tp_num_tab;
+    l_widths        tp_num_tab;
+    type tp_header_col is record
+      ( font_size      number
+      , top_padding    number
+      , bottom_padding number
+      , left_padding   number
+      , right_padding  number
+      , line_spacing   number
+      , line_spacing_f number
+      , font_index     pls_integer
+      , fill_color     varchar2(100)
+      , text_color     varchar2(100)
+      );
+    type tp_header_cols is table of tp_header_col index by pls_integer;
+    l_header_col  tp_header_col;
+    l_header_cols tp_header_cols;
+    type tp_fmts is table of varchar2(256) index by pls_integer;
+    l_fmts tp_fmts;
     --
     procedure print_header
     is
       l_fi     pls_integer;
       l_fs     number;
-      l_top    number;
+      l_mt     number := 0;
       l_height number := 0;
       l_x      number := l_start_x;
+      l_ph     constant boolean := case when p_headers is not null then p_headers.count >= l_col_cnt else false end;
+      l_oh     constant boolean := coalesce( jvs2n( p_options, 'headers.length()' ) > 0, false );
+      l_txt    varchar2(32767) character set p_options%charset;
+      --
+      procedure wt( p_idx pls_integer, p_dry_run boolean )
+      is
+      begin
+        if l_ph
+        then
+          l_txt := p_headers( p_idx );
+        elsif l_oh
+        then
+          l_txt := coalesce( xjv( p_options, 'headers[' || to_char( p_idx - 1 ) || '].header' )
+                           , xjv( p_options, 'headers[' || to_char( p_idx - 1 ) || ']' )
+                           );
+        else
+          l_txt := l_desc_tab( p_idx ).col_name;
+        end if;
+        if not p_dry_run
+        then
+          font2page_i( l_header_cols( p_idx ).font_index, l_header_cols( p_idx ).font_size );
+        end if;
+        wti( replace( l_txt, chr(9), c_tab_spaces )
+           , l_x + l_header_cols( p_idx ).left_padding + 0.5 * l_lw, l_y
+           , l_x + l_header_cols( p_idx ).left_padding + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_header_cols( p_idx ).right_padding - 0.5 * l_lw
+           , null, null
+           , l_header_cols( p_idx ).font_index, l_header_cols( p_idx ).font_size, l_header_cols( p_idx ).line_spacing
+           , l_header_cols( p_idx ).text_color, null
+           , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_page_break
+           , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
+           );
+      exception
+        when e_no_fit then
+          raise_application_error( -20023, 'Text "'|| l_txt || '" does not fit in allowed space (' || to_char_round( l_widths( p_idx ), 0 ) || ').' );
+      end wt;
     begin
-      if p_headers is null or p_headers.count != l_col_cnt
+      if not ( l_ph or l_oh or l_header )
       then
         return;
       end if;
-      if p_header_fi is not null and g_pdf.fonts.exists( p_header_fi )
-      then
-        l_fi := p_header_fi;
-      else
-        l_fi := l_font_index;
-      end if;
-      l_fs := coalesce( p_header_fs, l_fontsize );
-      l_font := g_pdf.fonts( l_fi );
-      l_top := ( 0.5 * l_font.linegap + l_font.ascent ) * l_fs / 1000;
       --
       for i in 1 .. l_col_cnt
       loop
-        wti( replace( p_headers( i ), chr(9), rpad( ' ', c_tab_spaces ) )
-           , l_padding, l_y
-           , l_padding, l_widths( i ) - l_padding
-           , null, null
-           , l_fi, l_fs, null, null
-           , true, l_tmp_x, l_tmp_y, l_lines, l_page_break
-           );
-        l_height := greatest( l_height, l_fs * coalesce( l_lines, 1 ) );
+        l_fs := l_header_cols( i ).font_size;
+        l_fi := l_header_cols( i ).font_index;
+        l_col_font := g_pdf.fonts( l_fi );
+        l_tmp := get_font_top( l_col_font, l_fs ) + l_header_cols( i ).top_padding;
+        l_mt := greatest( l_mt, l_tmp );
+        l_tmp := l_tmp + get_font_bottom( l_col_font, l_fs ) + l_header_cols( i ).bottom_padding;
+        wt( i, true );
+        l_height := greatest( l_height, l_tmp + l_header_cols( i ).line_spacing * ( coalesce( l_lines, 1 ) - 1 ) );
       end loop;
       --
       fill_with_borders
-        ( l_start_x, l_y + l_top
-        , l_start_x + l_line_width, l_y + l_top - l_height
-        , l_widths, p_header_color, null, p_line_color, p_line_width
+        ( l_start_x, l_y + l_mt + 0.5 * l_lw
+        , l_start_x + l_line_width, l_y + l_mt - l_height - 0.5 * l_lw
+        , l_widths, l_header_col.fill_color, l_line_color, l_lw
         );
       --
       for i in 1 .. l_col_cnt
       loop
-        begin
-          wti( replace( p_headers( i ), chr(9), rpad( ' ', c_tab_spaces ) )
-             , l_x + l_padding, l_y
-             , l_x + l_padding, l_x + l_widths( i ) - l_padding
-             , null, null
-             , l_fi, l_fs
-             , p_header_txt_c, null
-             , false, l_tmp_x, l_tmp_y, l_lines, l_page_break
-             );
-        exception
-          when e_no_fit then
-            raise_application_error( -20023, 'Text "'|| p_headers( i ) || '" does not fit in allowed space (' || to_char_round( l_widths( i ), 0 ) || ').' );
-        end;
+        wt( i,  false );
         l_x := l_x + l_widths( i );
       end loop;
-      l_y := l_y - l_height;
+      l_y := l_y - l_height - l_lw - l_max_top + l_mt;
     end print_header;
     --
     procedure row_height_page_break
@@ -6486,24 +11582,26 @@ $END
       , p_idx pls_integer
       )
     is
+      l_lh number;
     begin
-      wti( replace( p_txt, chr(9), rpad( ' ', c_tab_spaces ) )
-         , l_padding, l_y
-         , l_padding, l_widths( p_idx ) - l_padding
+      wti( replace( p_txt, chr(9), c_tab_spaces )
+         , l_clp( p_idx ) + 0.5 * l_lw, l_y
+         , l_clp( p_idx ) + 0.5 * l_lw, l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
          , null, null
-         , l_fi( p_idx ), l_fs( p_idx ), null, null
+         , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx ), null, null
          , true, l_tmp_x, l_tmp_y, l_lines, l_page_break
          );
-      if l_y + l_max_top - l_fs( p_idx ) * coalesce( l_lines, 1 ) < l_settings.margin_bottom
+      l_lh := l_mh( p_idx ) + l_cls( p_idx ) * ( coalesce( l_lines, 1 ) - 1 );
+      if l_y + l_max_top - l_lh < l_settings.margin_bottom
       then
-        new_page;
+        new_or_next_page;
         l_y := l_settings.page_height - l_settings.margin_top - l_max_top;
-        if p_header_repeat
+        if l_header_repeat
         then
           print_header;
         end if;
       end if;
-      l_max_height := greatest( l_max_height, l_fs( p_idx ) * coalesce( l_lines, 1 ) );
+      l_max_height := greatest( l_max_height, l_lh );
     exception
       when e_no_fit then
         raise_application_error( -20023, 'Text "'|| p_txt || '" does not fit in allowed space (' || to_char_round( l_widths( p_idx ), 0 ) || ').' );
@@ -6522,13 +11620,15 @@ $END
         then
           row_height_page_break( p_txt, p_idx );
         else
-          wti( replace( p_txt, chr(9), rpad( ' ', c_tab_spaces ) )
-             , l_x + l_padding, l_y
-             , l_x + l_padding, l_x + l_widths( p_idx ) - l_padding
+          font2page_i( l_fi( p_idx ), l_fs( p_idx ) );
+          wti( replace( p_txt, chr(9), c_tab_spaces )
+             , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_y
+             , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
              , null, null
-             , l_fi( p_idx ), l_fs( p_idx ), p_txt_color
-             , case when p_al.exists( p_idx ) then p_al( p_idx ) end
+             , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx ), l_text_color
+             , null
              , false, l_tmp_x, l_tmp_y, l_lines, l_page_break
+             , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
              );
           l_x := l_x + l_widths( p_idx );
         end if;
@@ -6550,7 +11650,16 @@ $END
               dbms_sql.define_column( p_cursor, c, l_v, 32767 );
             else
               dbms_sql.column_value( p_cursor, c, l_v );
-              hc( l_v, c );
+              if p_how = 3 and upper( l_fmts( c ) ) in ( 'LINK', 'URL' )
+              then
+                link( l_v, l_v
+                    , l_x + l_clp( c ), l_y
+                    , l_fi( c ), l_fs( c ), l_text_color
+                    );
+                l_x := l_x + l_widths( c );
+              else
+                hc( l_v, c );
+              end if;
             end if;
           when l_desc_tab( c ).col_type in ( 2   -- number
                                            , 100 -- bfloat
@@ -6562,12 +11671,7 @@ $END
               dbms_sql.define_column( p_cursor, c, l_n );
             else
               dbms_sql.column_value( p_cursor, c, l_n );
-              if p_fmt.exists( c )
-              then
-                hc( to_char( l_n, p_fmt( c ) ), c );
-              else
-                hc( to_char( l_n ), c );
-              end if;
+              hc( to_char( l_n, coalesce( l_fmts( c ), l_num_fmt, 'TM' ) ), c );
             end if;
           when l_desc_tab( c ).col_type = 12  -- date
           then
@@ -6576,11 +11680,11 @@ $END
               dbms_sql.define_column( p_cursor, c, l_d );
             else
               dbms_sql.column_value( p_cursor, c, l_d );
-              if p_fmt.exists( c )
+              if coalesce( l_fmts( c ), l_date_fmt ) is null
               then
-                hc( to_char( l_d, p_fmt( c ) ), c );
-              else
                 hc( to_char( l_d ), c );
+              else
+                hc( to_char( l_d, coalesce( l_fmts( c ), l_date_fmt ) ), c );
               end if;
             end if;
           when l_desc_tab( c ).col_type = 180  -- timestamp
@@ -6590,11 +11694,11 @@ $END
               dbms_sql.define_column( p_cursor, c, l_ts );
             else
               dbms_sql.column_value( p_cursor, c, l_ts );
-              if p_fmt.exists( c )
+              if l_fmts( c ) is null
               then
-                hc( to_char( l_ts, p_fmt( c ) ), c );
-              else
                 hc( to_char( l_ts ), c );
+              else
+                hc( to_char( l_ts, l_fmts( c ) ), c );
               end if;
             end if;
           when l_desc_tab( c ).col_type = 181  -- timestamp with time zone
@@ -6604,11 +11708,11 @@ $END
               dbms_sql.define_column( p_cursor, c, l_tsz );
             else
               dbms_sql.column_value( p_cursor, c, l_tsz );
-              if p_fmt.exists( c )
+              if l_fmts( c ) is null
               then
-                hc( to_char( l_tsz, p_fmt( c ) ), c );
-              else
                 hc( to_char( l_tsz ), c );
+              else
+                hc( to_char( l_tsz, l_fmts( c ) ), c );
               end if;
             end if;
           when l_desc_tab( c ).col_type = 231  -- timestamp with local time zone
@@ -6618,11 +11722,11 @@ $END
               dbms_sql.define_column( p_cursor, c, l_tslz );
             else
               dbms_sql.column_value( p_cursor, c, l_tslz );
-              if p_fmt.exists( c )
+              if l_fmts( c ) is null
               then
-                hc( to_char( l_tslz, p_fmt( c ) ), c );
-              else
                 hc( to_char( l_tslz ), c );
+              else
+                hc( to_char( l_tslz, l_fmts( c ) ), c );
               end if;
             end if;
           when l_desc_tab( c ).col_type = 23  -- raw
@@ -6630,20 +11734,18 @@ $END
             if p_how = 1
             then
               dbms_sql.define_column( p_cursor, c, l_r, 32767 );
+            elsif upper( l_fmts( c ) ) = 'HEX'
+            then
+              dbms_sql.column_value( p_cursor, c, l_r );
+              hc( rawtohex( l_r ), c );
             elsif p_how = 3
             then
               dbms_sql.column_value( p_cursor, c, l_r );
-              if l_padding > 0
-              then
-                l_img_pad := l_padding;
-              else
-                l_img_pad := coalesce( l_line_width, 0.5 );
-              end if;
               put_image( to_blob( l_r )
-                       , l_x + l_img_pad, l_y + l_max_top - l_max_height + l_img_pad
-                       , l_widths( c ) - 2 * l_img_pad
-                       , l_max_height - 2 * l_img_pad
-                       , 'C', 'C'
+                       , l_x + l_clp( c ), l_y + l_max_top - l_min_height + l_cbp( c )
+                       , l_widths( c ) - l_clp( c ) - l_crp( c )
+                       , l_min_height - l_ctp( c ) - l_cbp( c ) - l_lw
+                       , 'F', 'F'
                        );
               l_x := l_x + l_widths( c );
             end if;
@@ -6654,22 +11756,19 @@ $END
               dbms_sql.define_column( p_cursor, c, l_b );
             elsif p_how = 3
             then
-              if l_padding > 0
-              then
-                l_img_pad := l_padding;
-              else
-                l_img_pad := coalesce( l_line_width, 0.5 );
-              end if;
               dbms_lob.createtemporary( l_b, true );
               dbms_sql.column_value( p_cursor, c, l_b );
               put_image( l_b
-                       , l_x + l_img_pad, l_y + l_max_top - l_max_height + l_img_pad
-                       , l_widths( c ) - 2 * l_img_pad
-                       , l_max_height - 2 * l_img_pad
-                       , 'C', 'C'
+                       , l_x + l_clp( c ), l_y + l_max_top - l_min_height + l_cbp( c )
+                       , l_widths( c ) - l_clp( c ) - l_crp( c )
+                       , l_min_height - l_ctp( c ) - l_cbp( c ) - l_lw
+                       , 'F', 'F'
                        );
               l_x := l_x + l_widths( c );
-              dbms_lob.freetemporary( l_b );
+              if dbms_lob.istemporary( l_b ) = 1
+              then
+                dbms_lob.freetemporary( l_b );
+              end if;
             end if;
           when l_desc_tab( c ).col_type in ( 1   -- varchar
                                            , 9   -- varchar2
@@ -6691,54 +11790,136 @@ $END
       end loop;
       if p_how = 3
       then
-        l_y := l_y - l_max_height;
-        g_pdf.y := l_y; 
+        l_y := l_y - l_max_height - l_lw;
+        g_pdf.y := l_y;
       end if;
     end handle_columns;
+    --
   begin
+    l_script     := xjv( p_options, 'script' );
+    l_lang_sys   := xjv( p_options, 'langSys' );
+    l_features   := get_features( p_options );
+    l_rtl        := jvs2b( p_options, 'RTL' );
+    l_apply_gsub := jvs2b( p_options, 'applyGSUB' );
+    l_apply_gpos := jvs2b( p_options, 'applyGPOS' );
+    l_options := null;
     dbms_sql.describe_columns2( p_cursor, l_col_cnt, l_desc_tab );
     --
-    l_font_index := gfi( p_font_index );
+    if g_pdf.current_page is null
+    then
+      new_page;
+    end if;
+    l_lw := coalesce( p_line_width
+                    , jvs2n( p_options, 'lineWidth' )
+                    , c_default_line_width
+                    );
+    l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
     l_font := g_pdf.fonts( l_font_index );
-    l_fontsize := coalesce( p_fontsize, l_font.fontsize );
-    l_max_top := ( 0.5 * l_font.linegap + l_font.ascent ) * l_fontsize / 1000;
-    l_idx := p_fi.first;
-    loop
-      exit when l_idx is null;
-      l_font := g_pdf.fonts( p_fi( l_idx ) );
-      if p_fs.exists( l_idx )
-      then
-        l_max_top := greatest( l_max_top, ( 0.5 * l_font.linegap + l_font.ascent ) * p_fs( l_idx ) / 1000 );
-      else
-        l_max_top := greatest( l_max_top, ( 0.5 * l_font.linegap + l_font.ascent ) * l_fontsize / 1000 );
-      end if;
-      l_idx := p_fi.next( l_idx );
-    end loop;
-    l_font := g_pdf.fonts( l_font_index );
-    l_idx := p_fs.first;
-    loop
-      exit when l_idx is null;
-      l_idx := p_fs.next( l_idx );
-      if not p_fi.exists( l_idx )
-      then
-        l_max_top := greatest( l_max_top, ( 0.5 * l_font.linegap + l_font.ascent ) * p_fs( l_idx ) / 1000 );
-      end if;
-    end loop;
+    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+    l_header := coalesce( upper( xjv( p_options, 'header' ) ) = 'TRUE', false );
+    l_header_repeat := coalesce( upper( xjv( p_options, 'headerRepeat' ) ) = 'TRUE', true );
+    l_fill_color := xjv( p_options, 'fillColor' );
+    l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
+    l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
+    l_odd_color  := coalesce( p_odd_color, xjv( p_options, 'oddColor' ) );
+    l_even_color := coalesce( p_even_color, xjv( p_options, 'evenColor' ) );
+    get_padding( p_options, l_tp, l_bp, l_lp, l_rp );
+    l_tp := coalesce( l_tp, 0 );
+    l_bp := coalesce( l_bp, 0 );
+    l_lp := coalesce( l_lp, 2 );
+    l_rp := coalesce( l_rp, 2 );
+    l_max_top := get_font_top( l_font, l_fontsize ) + l_tp;
+    l_min_height := coalesce( p_min_height, jvs2n( p_options, 'minimalHeight' ), 0 );
+    l_min_height := greatest( l_min_height, l_bp + get_font_bottom( l_font, l_fontsize ) + l_max_top );
+    l_line_sp := jvs2n( p_options, 'lineSpacing' );
+    l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
     --
     for c in 1 .. l_col_cnt
     loop
-      if p_fi.exists( c )
+      l_col_path := 'columns[' || to_char( c - 1 ) || '].';
+      l_col_fs := jvs2n( p_options, l_col_path || 'fontSize' );
+      l_col_fi := jvs2n( p_options, l_col_path || 'fontIndex' );
+      if l_col_fi is null or ( l_col_fi != l_font_index and not g_pdf.fonts.exists( l_col_fi ) )
       then
-        l_fi( c ) := p_fi( c );
-      else
-        l_fi( c ) := l_font_index;
+        l_col_fi := l_font_index;
       end if;
-      if p_fs.exists( c )
+      l_fi( c ) := l_col_fi;
+      if l_col_fs is null
       then
-        l_fs( c ) := p_fs( c );
-      else
-        l_fs( c ) := l_fontsize;
+        l_col_fs := l_fontsize;
       end if;
+      l_fs( c ) := l_col_fs;
+      get_padding( p_options, l_ctp( c ), l_cbp( c ), l_clp( c ), l_crp( c ), l_col_path );
+      l_ctp( c ) := coalesce( l_ctp( c ), l_tp );
+      l_cbp( c ) := coalesce( l_cbp( c ), l_bp );
+      l_clp( c ) := coalesce( l_clp( c ), l_lp );
+      l_crp( c ) := coalesce( l_crp( c ), l_rp );
+      if l_col_fi = l_font_index
+      then
+        l_ft := get_font_top( l_font, l_col_fs );
+        l_fb := get_font_bottom( l_font, l_col_fs );
+      else
+        l_col_font := g_pdf.fonts( l_col_fi );
+        l_ft := get_font_top( l_col_font, l_col_fs );
+        l_fb := get_font_bottom( l_col_font, l_col_fs );
+      end if;
+      l_max_top := greatest( l_max_top, l_ft + l_ctp( c ) );
+      l_tmp := l_cbp( c ) + l_fb + l_ctp( c ) + l_ft;
+      l_mh( c ) := l_tmp;
+      l_min_height := greatest( l_min_height, l_tmp );
+      l_cls( c ) := coalesce( jvs2n( p_options, l_col_path || 'lineSpacing' )
+                            , l_col_fs * jvs2n( p_options, l_col_path || 'lineSpacingFactor' )
+                            , l_line_sp
+                            , l_col_fs * l_line_spf
+                            );
+      l_fmts( c ) := xjv( p_options, l_col_path || 'format' );
+    end loop;
+    --
+    l_header_col.font_index := jvs2n( p_options, 'headerFontIndex' );
+    if l_header_col.font_index is null or not g_pdf.fonts.exists( l_header_col.font_index )
+    then
+      l_header_col.font_index := l_font_index;
+    end if;
+    l_header_col.font_size := coalesce( jvs2n( p_options, 'headerFontSize' ), l_fontsize );
+    l_header_col.text_color := coalesce( substr( xjv( p_options, 'headerTextColor' ), 1, 100 ), l_text_color );
+    l_header_col.fill_color := coalesce( substr( xjv( p_options, 'headerFillColor' ), 1, 100 ), l_fill_color );
+    l_header_col.line_spacing := jvs2n( p_options,  'headerLineSpacing' );
+    l_header_col.line_spacing_f := jvs2n( p_options,  'headerLineSpacingFactor' );
+    get_padding( p_options, l_header_col.top_padding, l_header_col.bottom_padding, l_header_col.left_padding, l_header_col.right_padding, null, 'header' );
+    l_header_col.top_padding    := coalesce( l_header_col.top_padding, l_tp );
+    l_header_col.bottom_padding := coalesce( l_header_col.bottom_padding, l_bp );
+    l_header_col.left_padding   := coalesce( l_header_col.left_padding, l_lp );
+    l_header_col.right_padding  := coalesce( l_header_col.right_padding, l_rp );
+    l_num_fmt := xjv( p_options, l_col_path || 'numberFormat' );
+    l_date_fmt := xjv( p_options, l_col_path || 'dateFormat' );
+    for c in 1 .. l_col_cnt
+    loop
+      l_col_path := 'headers[' || to_char( c - 1 ) || '].';
+      l_col_fs := jvs2n( p_options, l_col_path || 'fontSize' );
+      l_col_fi := jvs2n( p_options, l_col_path || 'fontIndex' );
+      if l_col_fi is null or ( l_col_fi != l_header_col.font_index and not g_pdf.fonts.exists( l_col_fi ) )
+      then
+        l_col_fi := l_header_col.font_index;
+      end if;
+      l_header_cols( c ).font_index := l_col_fi;
+      if l_col_fs is null
+      then
+        l_col_fs := l_header_col.font_size;
+      end if;
+      l_header_cols( c ).font_size := l_col_fs;
+      get_padding( p_options, l_header_cols( c ).top_padding, l_header_cols( c ).bottom_padding, l_header_cols( c ).left_padding, l_header_cols( c ).right_padding, l_col_path );
+      l_header_cols( c ).top_padding    := coalesce( l_header_cols( c ).top_padding   , l_header_col.top_padding );
+      l_header_cols( c ).bottom_padding := coalesce( l_header_cols( c ).bottom_padding, l_header_col.bottom_padding );
+      l_header_cols( c ).left_padding   := coalesce( l_header_cols( c ).left_padding  , l_header_col.left_padding );
+      l_header_cols( c ).right_padding  := coalesce( l_header_cols( c ).right_padding , l_header_col.right_padding );
+      l_header_cols( c ).line_spacing := coalesce( jvs2n( p_options, l_col_path || 'lineSpacing' )
+                                                 , l_col_fs * jvs2n( p_options, l_col_path || 'lineSpacingFactor' )
+                                                 , l_header_col.line_spacing
+                                                 , l_col_fs * l_header_col.line_spacing_f
+                                                 , l_line_sp
+                                                 , l_col_fs * l_line_spf
+                                                 );
+      l_header_cols( c ).text_color := coalesce( substr( xjv( p_options, l_col_path || 'textColor' ), 1, 100 ), l_header_col.text_color );
     end loop;
     --
     if g_pdf.current_page is null
@@ -6753,8 +11934,21 @@ $END
       l_start_x := p_x;
     end if;
     l_y := coalesce( p_y, g_pdf.y, l_settings.page_height - l_settings.margin_top - l_max_top );
-    l_padding := str_len( ' ', l_font_index, l_fontsize );
-    handle_widths( p_widths, l_col_cnt, l_start_x, l_settings, l_widths );
+    if     p_widths is null
+       and (  jvs2n( p_options, 'widths.length()' ) > 0
+           or jvs2n( p_options, 'columns[0].width' ) > 0
+           )
+    then
+      for i in 1 .. l_col_cnt
+      loop
+        l_widths( i ) := coalesce( jvs2n( p_options, 'widths[' || to_char( i - 1 ) || ']' )
+                                 , jvs2n( p_options, 'columns[' || to_char( i - 1 ) || '].width' )
+                                 , 5
+                                 );
+      end loop;
+    else
+      handle_widths( p_widths, l_col_cnt, l_start_x, l_settings, l_widths, jvs2n( p_options, 'width' ) );
+    end if;
     l_line_width := 0;
     for i in 1 .. l_col_cnt
     loop
@@ -6766,19 +11960,17 @@ $END
     l_row_nr := 0;
     loop
       exit when dbms_sql.fetch_rows( p_cursor ) = 0;
-      l_max_height := 0;
+      l_max_height := l_min_height;
       l_row_nr := l_row_nr + 1;
-      handle_columns( 2 ); -- calc row height
+      handle_columns( 2 ); -- calc row height and goes to next pages when required
       --
       fill_with_borders
-        ( l_start_x, l_y + l_max_top
-        , l_start_x + l_line_width, l_y + l_max_top - l_max_height
+        ( l_start_x, l_y + l_max_top + 0.5 * l_lw
+        , l_start_x + l_line_width, l_y + l_max_top - l_max_height - 0.5 * l_lw
         , l_widths
-        , case when bitand( l_row_nr, 1 ) > 0 then p_odd_color end
-        , case when bitand( l_row_nr, 1 ) = 0 then p_even_color end
-        , p_line_color, p_line_width
+        , coalesce( case when bitand( l_row_nr, 1 ) > 0 then l_odd_color else l_even_color end, l_fill_color )
+        , l_line_color, l_lw
         );
-      --
       handle_columns( 3 ); -- write to pdf
     end loop;
     --
@@ -6790,41 +11982,20 @@ $END
   end c2t;
   --
   procedure cursor2table
-    ( p_rc            sys_refcursor
-    , p_x             number
-    , p_y             number
-    , p_headers       tp_varchar2s := null
-    , p_widths        tp_numbers   := null
-    , p_font_index    pls_integer  := null
-    , p_fontsize      number       := null
-    , p_txt_color     varchar2     := null
-    , p_odd_color     varchar2     := null
-    , p_even_color    varchar2     := null
-    , p_line_color    varchar2     := null
-    , p_line_width    number       := null
-    , p_header_fi     pls_integer  := null
-    , p_header_fs     number       := null
-    , p_header_txt_c  varchar2     := null
-    , p_header_color  varchar2     := null
-    , p_header_repeat boolean      := true
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi            tp_pls_tab   := tp_pls_tab()
-    , p_fs            tp_num_tab   := tp_num_tab()
-    , p_al            tp_txt_tab   := tp_txt_tab()
-    , p_fmt           tp_txt_tab   := tp_txt_tab()
-$END
+    ( p_rc         sys_refcursor
+    , p_x          number
+    , p_y          number
+    , p_headers    tp_varchar2s := null
+    , p_widths     tp_numbers   := null
+    , p_font_index pls_integer  := null
+    , p_fontsize   number       := null
+    , p_txt_color  varchar2     := null
+    , p_odd_color  varchar2     := null
+    , p_even_color varchar2     := null
+    , p_line_color varchar2     := null
+    , p_line_width number       := null
+    , p_min_height number       := null
+    , p_options    varchar2 character set any_cs := null
     )
   is
     l_cx integer;
@@ -6832,95 +12003,130 @@ $END
   begin
     l_rc := p_rc;
     l_cx := dbms_sql.to_cursor_number( l_rc );
-    c2t( p_cursor        => l_cx
-       , p_x             => p_x
-       , p_y             => p_y
-       , p_headers       => p_headers
-       , p_widths        => p_widths
-       , p_font_index    => p_font_index
-       , p_fontsize      => p_fontsize
-       , p_txt_color     => p_txt_color
-       , p_odd_color     => p_odd_color
-       , p_even_color    => p_even_color
-       , p_line_color    => p_line_color
-       , p_line_width    => p_line_width
-       , p_header_fi     => p_header_fi
-       , p_header_fs     => p_header_fs
-       , p_header_txt_c  => p_header_txt_c
-       , p_header_color  => p_header_color
-       , p_header_repeat => p_header_repeat
-       , p_fi            => p_fi
-       , p_fs            => p_fs
-       , p_al            => p_al
-       , p_fmt           => p_fmt
+    c2t( p_cursor     => l_cx
+       , p_x          => p_x
+       , p_y          => p_y
+       , p_headers    => p_headers
+       , p_widths     => p_widths
+       , p_font_index => p_font_index
+       , p_fontsize   => p_fontsize
+       , p_txt_color  => p_txt_color
+       , p_odd_color  => p_odd_color
+       , p_even_color => p_even_color
+       , p_line_color => p_line_color
+       , p_line_width => p_line_width
+       , p_min_height => p_min_height
+       , p_options    => p_options
        );
   end cursor2table;
   --
   procedure query2table
-    ( p_query        varchar2
-    , p_x             number
-    , p_y             number
-    , p_headers       tp_varchar2s := null
-    , p_widths        tp_numbers   := null
-    , p_font_index    pls_integer  := null
-    , p_fontsize      number       := null
-    , p_txt_color     varchar2     := null
-    , p_odd_color     varchar2     := null
-    , p_even_color    varchar2     := null
-    , p_line_color    varchar2     := null
-    , p_line_width    number       := null
-    , p_header_fi     pls_integer  := null
-    , p_header_fs     number       := null
-    , p_header_txt_c  varchar2     := null
-    , p_header_color  varchar2     := null
-    , p_header_repeat boolean      := true
-$IF dbms_db_version.ver_le_11
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    , p_fi            tp_pls_tab  := c_null_pls_tab
-    , p_fs            tp_num_tab  := c_null_num_tab
-    , p_al            tp_txt_tab  := c_null_txt_tab
-    , p_fmt           tp_txt_tab  := c_null_txt_tab
-$ELSE
-    , p_fi            tp_pls_tab   := tp_pls_tab()
-    , p_fs            tp_num_tab   := tp_num_tab()
-    , p_al            tp_txt_tab   := tp_txt_tab()
-    , p_fmt           tp_txt_tab   := tp_txt_tab()
-$END
+    ( p_query      varchar2
+    , p_x          number
+    , p_y          number
+    , p_headers    tp_varchar2s := null
+    , p_widths     tp_numbers   := null
+    , p_font_index pls_integer  := null
+    , p_fontsize   number       := null
+    , p_txt_color  varchar2     := null
+    , p_odd_color  varchar2     := null
+    , p_even_color varchar2     := null
+    , p_line_color varchar2     := null
+    , p_line_width number       := null
+    , p_min_height number       := null
+    , p_options    varchar2 character set any_cs := null
     )
   is
+    l_num   number;
     l_cx    integer;
     l_dummy integer;
+    l_cnt   pls_integer;
+    l_bind  varchar2(32767);
+    l_name  varchar2(32767);
+    l_value varchar2(32767);
+    l_type  varchar2(32767);
+    l_fmt   varchar2(32767);
   begin
     l_cx := dbms_sql.open_cursor;
     dbms_sql.parse( l_cx, p_query, dbms_sql.native );
+    l_cnt := xjv( p_options, 'binds.length()' );
+    if l_cnt > 0
+    then
+      for i in 0 .. l_cnt - 1
+      loop
+        l_bind := xjv( p_options, 'binds[' || i || ']' );
+        l_value := rtrim( ltrim( xjv( l_bind, 'value' ) ) );
+        l_name := ltrim( xjv( l_bind, 'name' ) );
+        if l_name is null and l_value is null
+        then
+          l_name := ':' || to_char( i + 1 );
+          l_value := l_bind;
+          begin
+            l_num := to_number( l_value );
+            l_type := 'N';
+          exception
+            when value_error then null;
+          end;
+        else
+          l_name := ':' || ltrim( l_name, ' :' );
+          l_type := upper( substr( ltrim( xjv( l_bind, 'type' ) ), 1, 1 ) );
+        end if;
+        if l_type = 'N'
+        then
+          l_fmt := xjv( l_bind, 'fmt' );
+          if l_fmt is null
+          then
+            dbms_sql.bind_variable( l_cx, l_name, to_number( l_value ) );
+          else
+            dbms_sql.bind_variable( l_cx, l_name, to_number( l_value, l_fmt ) );
+          end if;
+        elsif l_type = 'D'
+        then
+          l_fmt := xjv( l_bind, 'fmt' );
+          if l_fmt is null
+          then
+            dbms_sql.bind_variable( l_cx, l_name, to_date( l_value ) );
+          else
+            dbms_sql.bind_variable( l_cx, l_name, to_date( l_value, l_fmt ) );
+          end if;
+        elsif l_type = 'T'
+        then
+          l_fmt := xjv( l_bind, 'fmt' );
+          if l_fmt is null
+          then
+            dbms_sql.bind_variable( l_cx, l_name, to_timestamp( l_value ) );
+          else
+            dbms_sql.bind_variable( l_cx, l_name, to_timestamp( l_value, l_fmt ) );
+          end if;
+        elsif l_type = 'Z'
+        then
+          l_fmt := xjv( l_bind, 'fmt' );
+          if l_fmt is null
+          then
+            dbms_sql.bind_variable( l_cx, l_name, to_timestamp_tz( l_value ) );
+          else
+            dbms_sql.bind_variable( l_cx, l_name, to_timestamp_tz( l_value, l_fmt ) );
+          end if;
+        else
+          dbms_sql.bind_variable( l_cx, l_name, l_value );
+        end if;
+      end loop;
+    end if;
     l_dummy := dbms_sql.execute( l_cx );
-    c2t( p_cursor        => l_cx
-       , p_x             => p_x
-       , p_y             => p_y
-       , p_headers       => p_headers
-       , p_widths        => p_widths
-       , p_font_index    => p_font_index
-       , p_fontsize      => p_fontsize
-       , p_txt_color     => p_txt_color
-       , p_odd_color     => p_odd_color
-       , p_even_color    => p_even_color
-       , p_line_color    => p_line_color
-       , p_line_width    => p_line_width
-       , p_header_fi     => p_header_fi
-       , p_header_fs     => p_header_fs
-       , p_header_txt_c  => p_header_txt_c
-       , p_header_color  => p_header_color
-       , p_header_repeat => p_header_repeat
-       , p_fi            => p_fi
-       , p_fs            => p_fs
-       , p_al            => p_al
-       , p_fmt           => p_fmt
+    c2t( p_cursor     => l_cx
+       , p_x          => p_x
+       , p_y          => p_y
+       , p_headers    => p_headers
+       , p_widths     => p_widths
+       , p_font_index => p_font_index
+       , p_fontsize   => p_fontsize
+       , p_txt_color  => p_txt_color
+       , p_odd_color  => p_odd_color
+       , p_even_color => p_even_color
+       , p_line_color => p_line_color
+       , p_line_width => p_line_width
+       , p_min_height => p_min_height
+       , p_options    => p_options
        );
   end query2table;
 end as_pdf;
