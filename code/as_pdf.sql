@@ -12,6 +12,7 @@ is
 -- acroforms
 -- https://github.com/phihag/pdfform.js/tree/master/test/data
 -- https://www.sejda.com/pdf-forms
+-- https://jsfiddle.net/Hopding/bct7vngL/4/
 --GSUB
 --https://learn.microsoft.com/en-gb/typography/script-development/arabic
 --https://learn.microsoft.com/en-us/windows/terminal/cascadia-code
@@ -98,6 +99,8 @@ is
     , p_color            varchar2    := null
     , p_page_proc        pls_integer := null
     , p_options          varchar2 character set any_cs := null
+    , p_alpha            number      := null
+    , p_outline_lvl      pls_integer := null
     );
   --
   procedure write_txt
@@ -143,6 +146,13 @@ is
     , p_color      varchar2    := null
     , p_txt_color  varchar2    := null
     , p_page_proc  pls_integer := null
+    );
+  --
+  procedure outline
+    ( p_title varchar2
+    , p_level pls_integer
+    , p_page  pls_integer
+    , p_y     number
     );
   --
   procedure multi_cell
@@ -235,6 +245,7 @@ is
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     );
   --
@@ -246,6 +257,7 @@ is
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     );
   --
@@ -257,6 +269,7 @@ is
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     );
   --
@@ -269,6 +282,7 @@ is
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     );
   --
@@ -553,6 +567,8 @@ is
   --
   procedure init;
   --
+  procedure finish_pdf( p_password varchar2 := null );
+  --
   function finish_pdf( p_password varchar2 := null )
   return blob;
   --
@@ -570,7 +586,7 @@ end as_pdf;
 
 create or replace package body as_pdf
 is
-  c_version            constant varchar2(10) := '0.4.0.1';
+  c_version            constant varchar2(10) := '0.4.0.2';
   c_db_charset         constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
   c_db_ncharset        constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
   c_producer           constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
@@ -712,6 +728,13 @@ is
     , object       number(10)
     );
   type tp_images is table of tp_img index by pls_integer;
+  type tp_outline is record
+    ( title varchar2(1000)
+    , lvl   pls_integer
+    , page  pls_integer
+    , y     number
+    );
+  type tp_outlines is table of tp_outline index by pls_integer;
   type tp_matrix is table of tp_pls_tab index by pls_integer;
   type tp_features is table of varchar2(4);
   type tp_lang_sys is record
@@ -855,6 +878,7 @@ is
     , gdef                tp_font_gdef
     , page_procs          tp_page_procs
     , page_settings       tp_settings
+    , outlines            tp_outlines
     , embedded_files      tp_embedded_files
     , font_files          tp_blobs
     );
@@ -2013,6 +2037,7 @@ null;
     g_pdf.font_old_new.delete;
     g_pdf.font_files.delete;
     g_pdf.gdef.delete;
+    g_pdf.outlines.delete;
     g_pdf.gsub_gpos.delete;
     g_pdf.fonts.delete;
     for i in 0 .. g_pdf.pages.count - 1
@@ -4382,18 +4407,18 @@ end' ) );   -- self + 4
     add_object;
     txt2pdfdoc( '<</Type/Page'
               || '/Parent ' || to_char( p_parent ) || ' 0 R'
-              ||  '/Contents ' || to_char( l_content ) || ' 0 R'
-              ||  '/Resources ' || to_char( p_resources ) || ' 0 R'
-              ||  '/Group<</Type/Group/S/Transparency/CS/DeviceRGB>>'
-              ||  '/MediaBox [0 0 '
-                || to_char_round( g_pdf.pages( p_page_ind ).settings.page_width
-                                , 0
-                                )
-                || ' '
-                || to_char_round( g_pdf.pages( p_page_ind ).settings.page_height
-                                , 0
-                                )
-                || '] ' || l_annots
+              || '/Contents ' || to_char( l_content ) || ' 0 R'
+              || '/Resources ' || to_char( p_resources ) || ' 0 R'
+              || '/Group<</Type/Group/S/Transparency/CS/DeviceRGB>>'
+              || '/MediaBox [0 0 '
+              || to_char_round( g_pdf.pages( p_page_ind ).settings.page_width
+                              , 0
+                              )
+              || ' '
+              || to_char_round( g_pdf.pages( p_page_ind ).settings.page_height
+                              , 0
+                              )
+              || '] ' || l_annots
               || '>>' || c_eol || 'endobj'
               );
   end add_page;
@@ -4597,6 +4622,89 @@ end' ) );   -- self + 4
     return l_self;
   end add_file_spec;
   --
+  function add_outlines( p_pages number )
+  return varchar2
+  is
+    l_self       number(10);
+    l_lvl        pls_integer;
+    l_tmp        pls_integer;
+    l_outl_cnt   pls_integer;
+    l_cur_parent pls_integer;
+    l_cnt        tp_pls_tab;
+    l_first      tp_pls_tab;
+    l_last       tp_pls_tab;
+    l_prev       tp_pls_tab;
+    l_next       tp_pls_tab;
+    l_parent     tp_pls_tab;
+  begin
+    l_outl_cnt := g_pdf.outlines.count;
+    if l_outl_cnt = 0
+    then
+      return '';
+    end if;
+    l_cur_parent := -1;
+    l_lvl := 0;
+    for i in 0 .. l_outl_cnt - 1
+    loop
+      if g_pdf.outlines(i).lvl = l_lvl
+      then
+        if l_cnt( l_cur_parent ) > 0
+        then
+          l_tmp := l_last( l_cur_parent );
+          l_next( l_tmp ) := i;
+          l_prev( i ) := l_tmp;
+        end if;
+      elsif g_pdf.outlines(i).lvl > l_lvl
+      then
+        l_lvl := g_pdf.outlines(i).lvl;
+        l_cur_parent := i - 1;
+        l_cnt( l_cur_parent ) := 0;
+        l_first( l_cur_parent ) := i;
+      else
+        l_lvl := g_pdf.outlines(i).lvl;
+        for j in reverse 0 .. i - 1
+        loop
+          if l_lvl = g_pdf.outlines(j).lvl
+          then
+            l_cur_parent := l_parent( j );
+            l_next( j ) := i;
+            l_prev( i ) := j;
+            exit;
+          end if;
+        end loop;
+      end if;
+      l_parent( i ) := l_cur_parent;
+      l_last( l_cur_parent ) := i;
+      l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + 1;
+    end loop;
+    for i in reverse 0 .. l_outl_cnt - 1
+    loop
+      if l_cnt.exists( i )
+      then
+        l_cur_parent := l_parent( i );
+         l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + l_cnt( i );
+      end if;
+    end loop;
+    l_self := add_object;
+    txt2pdfdoc( '<</Type /Outlines'
+      || ' /First ' || ( l_self + l_first( -1 ) + 1 ) || ' 0 R'
+      || ' /Last '  || ( l_self + l_last( -1 ) + 1 )  || ' 0 R'
+      || ' /Count ' || l_cnt( -1 ) || ' >>' || c_eol || 'endobj' );
+    for i in 0 .. l_outl_cnt - 1
+    loop
+      add_object( '/Title ' || encode_utf16_be( g_pdf.outlines( i ).title )
+        || ' /Dest [' || ( p_pages + 2 * g_pdf.outlines( i ).page ) || ' 0 R'
+        || ' /XYZ 0 ' || to_char_round( g_pdf.outlines( i ).y, 2 ) || ' null]'
+        || case when l_prev.exists( i )   then ' /Prev '   || ( l_self + l_prev( i ) + 1 )   || ' 0 R' end
+        || case when l_next.exists( i )   then ' /Next '   || ( l_self + l_next( i ) + 1 )   || ' 0 R' end
+        || case when l_first.exists( i )  then ' /First '  || ( l_self + l_first( i ) + 1 )  || ' 0 R' end
+        || case when l_last.exists( i )   then ' /Last '   || ( l_self + l_last( i ) + 1 )   || ' 0 R' end
+        || case when l_cnt.exists( i )    then ' /Count '  || l_cnt( i ) end
+        );
+    end loop;
+    return ' /Outlines ' || l_self || ' 0 R /PageMode /UseOutlines ';
+  end add_outlines;
+  --
   function add_catalogue
   return number
   is
@@ -4655,6 +4763,7 @@ end' ) );   -- self + 4
                      || l_outputintents || l_metadata
                      || l_names || l_associated_files
                      || '/Pages ' || to_char( l_pages ) || ' 0 R'
+                     || add_outlines( l_pages )
                      || l_openaction
                      );
   end add_catalogue;
@@ -4916,6 +5025,7 @@ end' ) );   -- self + 4
                        , l_page_proc.nums( 5 )
                        , l_page_proc.chars( 1 )
                        , l_page_proc.chars( 2 )
+                       , l_page_proc.nums( 6 )
                        );
             when 10
             then
@@ -4932,7 +5042,9 @@ end' ) );   -- self + 4
                      , l_page_proc.nums( 4 )
                      , l_page_proc.nums( 5 )
                      , l_page_proc.chars( 1 )
-                     , p_options => l_page_proc.chars( 3 )
+                     , p_options     => l_page_proc.chars( 3 )
+                     , p_alpha       => l_page_proc.nums( 6 )
+                     , p_outline_lvl => l_page_proc.nums( 7 )
                      );
             when 11
             then
@@ -6878,6 +6990,7 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     )
   is
@@ -6925,28 +7038,31 @@ $END
         l_height := p_height;
       end if;
       --
+      l_x := coalesce( p_x, 0 );
       l_x := case substr( upper( p_align ), 1, 1 )
-               when 'R' then p_x + coalesce( p_width - l_width, 0 )     -- right
-               when 'E' then p_x + coalesce( p_width - l_width, 0 )     -- end
-               when 'C' then p_x + coalesce( p_width - l_width, 0 ) / 2 -- center
-               when 'F' then p_x + coalesce( p_width - l_width, 0 ) / 2 -- fill
-               else p_x                                                 -- left, start
+               when 'R' then l_x + coalesce( p_width - l_width, 0 )     -- right
+               when 'E' then l_x + coalesce( p_width - l_width, 0 )     -- end
+               when 'C' then l_x + coalesce( p_width - l_width, 0 ) / 2 -- center
+               when 'F' then l_x + coalesce( p_width - l_width, 0 ) / 2 -- fill
+               else l_x                                                 -- left, start
              end;
+      l_y := coalesce( p_y, 0 );
       l_y := case substr( upper( p_valign ), 1, 1 )
-               when 'C' then p_y + coalesce( p_height - l_height, 0 ) / 2 -- center
-               when 'F' then p_y + coalesce( p_height - l_height, 0 ) / 2 -- fill
-               when 'T' then p_y + coalesce( p_height - l_height, 0 )     -- top
-               else p_y                                                   -- bottom
+               when 'C' then l_y + coalesce( p_height - l_height, 0 ) / 2 -- center
+               when 'F' then l_y + coalesce( p_height - l_height, 0 ) / 2 -- fill
+               when 'T' then l_y + coalesce( p_height - l_height, 0 )     -- top
+               else l_y                                                   -- bottom
              end;
       --
-      txt2page(  'q '
-              || to_char_round( 1 ) || ' 0 0 ' || to_char_round( 1 ) || ' ' || to_char_round( l_x ) || ' ' || to_char_round( l_y ) || ' cm '
+      txt2page(  'q ' );
+      add_alpha( p_alpha );
+      txt2page(  '1 0 0 1 ' || to_char_round( l_x ) || ' ' || to_char_round( l_y ) || ' cm '
               || to_char_round( l_width ) || ' 0 0 ' || to_char_round( l_height ) || ' 0 0 cm '
               || ' /I' || to_char( p_img_idx ) || ' Do Q'
               );
     else
       add_page_proc( 9, p_page_proc
-                   , p_nums  => tp_numbers( p_img_idx, p_x, p_y, p_width, p_height )
+                   , p_nums  => tp_numbers( p_img_idx, p_x, p_y, p_width, p_height, p_alpha )
                    , p_chars => tp_varchar2s( p_align, p_valign )
                    );
     end if;
@@ -6960,6 +7076,7 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
     )
   is
@@ -6975,6 +7092,7 @@ $END
              , p_height    => p_height
              , p_align     => p_align
              , p_valign    => p_valign
+             , p_alpha     => p_alpha
              , p_page_proc => p_page_proc
              );
   end;
@@ -6988,8 +7106,9 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
-  )
+    )
   is
   begin
     put_image( p_img_idx   => load_image( p_dir, p_file_name )
@@ -6999,6 +7118,7 @@ $END
              , p_height    => p_height
              , p_align     => p_align
              , p_valign    => p_valign
+             , p_alpha     => p_alpha
              , p_page_proc => p_page_proc
              );
   end put_image;
@@ -7011,8 +7131,9 @@ $END
     , p_height    number      := null
     , p_align     varchar2    := null
     , p_valign    varchar2    := null
+    , p_alpha     number      := null
     , p_page_proc pls_integer := null
-  )
+    )
   is
   begin
     if p_url is null
@@ -7026,6 +7147,7 @@ $END
              , p_height    => p_height
              , p_align     => p_align
              , p_valign    => p_valign
+             , p_alpha     => p_alpha
              , p_page_proc => p_page_proc
              );
   end;
@@ -9684,32 +9806,6 @@ $END
     l_rv      tp_pls_tab;
     l_tmp     tp_pls_tab;
   begin
-if p_gsub_gpos.table_type member of p_features then
-for i in 1 .. p_gsub_gpos.script_list.count
-loop
-  l_script := p_gsub_gpos.script_list( i );
-dbms_output.put_line( l_script.tag );
-  for j in l_script.script_table.first .. l_script.script_table.last
-  loop
-dbms_output.put_line( '  ' || j || ' ' || l_script.script_table( j ).tag );
-    l_tmp := l_script.script_table( j ).feature_indices;
-    for f in l_tmp.first .. l_tmp.last
-    loop
-      if f = 0 and l_tmp( 0 ) is null
-      then  -- no required feature
-        continue;
-      end if;
-      l_feature := p_gsub_gpos.feature_list( l_tmp( f ) );
-dbms_output.put_line( '    ' || f || ' ' || l_feature.tag );
-      for l in 1 .. l_feature.lookups.count
-      loop
-        l_lookup := p_gsub_gpos.lookup_list( l_feature.lookups( l ) );
-dbms_output.put_line( '      lookup ' || l || ' = ' || l_feature.lookups( l ) || ' ' || p_gsub_gpos.lookup_list( l_feature.lookups( l ) ).lookup_type );
-      end loop;
-    end loop;
-  end loop;
-end loop;
-end if;
     --
     if p_gsub_gpos.script_list is null or p_gsub_gpos.script_list.count = 0
     then
@@ -10656,6 +10752,33 @@ end if;
     end if;
   end get_features;
   --
+  procedure outline
+    ( p_title varchar2
+    , p_level pls_integer
+    , p_page  pls_integer
+    , p_y     number
+    )
+  is
+    l_outline tp_outline;
+  begin
+    if   p_title is null
+       or coalesce( p_level, 0 ) < 1
+       or (   g_pdf.outlines.last is not null
+          and g_pdf.outlines( g_pdf.outlines.last ).lvl < p_level - 1
+          )
+       or (   g_pdf.outlines.last is null
+          and p_level != 1
+          )
+    then
+      return;
+    end if;
+    l_outline.title := substr( p_title, 1, 512 );
+    l_outline.lvl   := p_level;
+    l_outline.page  := p_page;
+    l_outline.y     := p_y;
+    g_pdf.outlines( g_pdf.outlines.count ) := l_outline;
+  end outline;
+  --
   procedure put_txt
     ( p_x                number
     , p_y                number
@@ -10666,9 +10789,12 @@ end if;
     , p_color            varchar2    := null
     , p_page_proc        pls_integer := null
     , p_options          varchar2 character set any_cs := null
+    , p_alpha            number      := null
+    , p_outline_lvl      pls_integer := null
     )
   is
     l_chg        boolean;
+    l_alpha      number;
     l_fontsize   number;
     l_font_index pls_integer;
     l_page       tp_page;
@@ -10699,19 +10825,33 @@ end if;
           l_chg := true;
           font2page( l_font_index, l_fontsize );
         end if;
+        l_alpha := coalesce( p_alpha, jvs2n( p_options, 'alpha' ) );
+        if l_alpha between 0 and 1
+        then
+          txt2page(  'q ' );
+          add_alpha( l_alpha );
+        end if;
         put_txt_i( p_x, p_y, p_txt, p_degrees_rotation, l_font_index, l_fontsize, p_color
                  , xjv( p_options, 'script' ), xjv( p_options, 'langSys' )
                  , get_features( p_options )
                  , jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' )
                  , jvs2b( p_options, 'RTL' )
                  );
+        if l_alpha between 0 and 1
+        then
+          txt2page(  'Q ' );
+        end if;
         if l_chg
         then
           font2page;
         end if;
+        if p_outline_lvl > 0
+        then
+          outline( p_txt, p_outline_lvl, g_pdf.current_page + 1, p_y + l_fontsize );
+        end if;
       else
         add_page_proc( 10, p_page_proc
-                     , p_nums  => tp_numbers( p_x, p_y, p_degrees_rotation, p_font_index, p_fontsize )
+                     , p_nums  => tp_numbers( p_x, p_y, p_degrees_rotation, p_font_index, p_fontsize, p_alpha, p_outline_lvl )
                      , p_chars => tp_varchar2s( p_color, p_txt, p_options )
                      , p_nchar => case when isnchar( p_txt ) then p_txt end
                      );
@@ -10751,7 +10891,7 @@ end if;
     , p_new_y      in out number
     , p_lines      in out pls_integer
     , p_page_break in out boolean
-, p_options varchar2 := null
+    , p_options varchar2 := null
     , p_script      varchar2    := null
     , p_lang_sys    varchar2    := null
     , p_features    tp_features := null
@@ -10916,10 +11056,6 @@ end if;
       g_pdf.x := coalesce( p_x, g_pdf.x, l_settings.margin_left );
       g_pdf.y := coalesce( p_y, g_pdf.y, l_settings.page_height - l_settings.margin_top - l_fontsize );
     else
-      if g_pdf.current_page is null
-      then
-        new_page;
-      end if;
       font2page_i( l_font_index, l_fontsize );
       wti( replace( p_txt, chr(9), c_tab_spaces )
          , coalesce( p_x, g_pdf.x, l_settings.margin_left )
@@ -10989,37 +11125,45 @@ end if;
     , p_cnt      pls_integer
     , p_x        number
     , p_settings tp_settings
+    , p_options  varchar2 character set any_cs
     , p_out      in out tp_num_tab
-    , p_width    number := null
     )
   is
-    l_cnt   pls_integer;
-    l_width number;
+    l_width   number;
+    l_cnt     pls_integer;
+    l_widths  varchar2(32767) character set p_options%charset;
+    l_columns varchar2(32767) character set p_options%charset;
   begin
     p_out.delete;
-    if p_widths is null or p_widths.count < p_cnt
-    then
-      l_width := coalesce( p_width, p_settings.page_width - p_settings.margin_right - p_x );
-      if p_widths is null
+    l_widths  := xjv( p_options, 'widths' );
+    l_columns := xjv( p_options, 'columns' );
+    l_cnt := 0;
+    l_width := 0;
+    for i in 1 .. p_cnt
+    loop
+      p_out( i ) := coalesce( case when p_widths.exists( i ) then p_widths( i ) end
+                            , case when l_widths is not null then jvs2n( l_widths, '[' || ( i - 1 ) || ']' ) end
+                            , case when l_columns is not null then jvs2n( l_columns, '[' || ( i - 1 ) || '].width' ) end
+                            );
+      if p_out( i ) is null
       then
-        l_cnt := 0;
+        l_cnt := l_cnt + 1;
       else
-        l_cnt := p_widths.count;
-        for i in 1 .. l_cnt
-        loop
-          l_width := l_width - p_widths( i );
-          p_out( i ) := p_widths( i );
-        end loop;
+        l_width := l_width + p_out( i );
       end if;
-      l_width := greatest( l_width / ( p_cnt - l_cnt ), 0 );
-      for i in l_cnt + 1 .. p_cnt
-      loop
-        p_out( i ) := l_width;
-      end loop;
-    else
+    end loop;
+    if l_cnt > 0
+    then
+      l_width := coalesce( jvs2n( p_options, 'width' )
+                         , p_settings.page_width - p_settings.margin_right - coalesce( p_x, p_settings.margin_left )
+                         ) - l_width;
+      l_width := greatest( l_width / l_cnt, 0 );
       for i in 1 .. p_cnt
       loop
-        p_out( i ) := p_widths( i );
+        if p_out( i ) is null
+        then
+          p_out( i ) := l_width;
+        end if;
       end loop;
     end if;
   end handle_widths;
@@ -11317,27 +11461,13 @@ end if;
     l_bp := coalesce( l_bp, 0 );
     l_lp := coalesce( l_lp, 2 );
     l_rp := coalesce( l_rp, 2 );
-    l_min_height := coalesce( p_min_height, jvs2n( p_options, 'minimalHeight' ), 0 );
+    l_min_height := coalesce( jvs2n( p_options, 'minimalHeight' ), 0 );
     l_min_height := greatest( l_min_height, l_bp + get_font_bottom( l_font, l_fontsize ) + get_font_top( l_font, l_fontsize ) + l_tp );
     l_line_sp := jvs2n( p_options, 'lineSpacing' );
     l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
     --
     l_x := coalesce( p_x, l_settings.margin_left );
-    if     p_widths is null
-       and (  jvs2n( p_options, 'widths.length()' ) > 0
-           or jvs2n( p_options, 'columns[0].width' ) > 0
-           )
-    then
-      for i in 1 .. l_cnt
-      loop
-        l_widths( i ) := coalesce( jvs2n( p_options, 'widths[' || to_char( i - 1 ) || ']' )
-                                 , jvs2n( p_options, 'columns[' || to_char( i - 1 ) || '].width' )
-                                 , 5
-                                 );
-      end loop;
-    else
-      handle_widths( p_widths, l_cnt, l_x, l_settings, l_widths, jvs2n( p_options, 'width' ) );
-    end if;
+    handle_widths( p_widths, l_cnt, l_x, l_settings, p_options, l_widths );
     l_row_width := 0;
     for i in 1 .. l_cnt
     loop
@@ -11445,7 +11575,10 @@ end if;
     l_col_fi        pls_integer;
     l_row_nr        pls_integer;
     l_font_index    pls_integer;
+    l_part          pls_integer := 1;
+    l_outl_part_lvl pls_integer;
     l_col_path      varchar2(100);
+    l_align         varchar2(256);
     l_num_fmt       varchar2(256);
     l_date_fmt      varchar2(256);
     l_text_color    varchar2(32767);
@@ -11454,6 +11587,8 @@ end if;
     l_odd_color     varchar2(32767);
     l_even_color    varchar2(32767);
     l_options       varchar2(32767);
+    l_outline       varchar2(32767);
+    l_outline_part  varchar2(32767);
     l_script        varchar2(10);
     l_lang_sys      varchar2(10);
     l_apply_gsub    boolean;
@@ -11502,6 +11637,7 @@ end if;
     l_header_cols tp_header_cols;
     type tp_fmts is table of varchar2(256) index by pls_integer;
     l_fmts tp_fmts;
+    l_ca   tp_fmts;
     --
     procedure print_header
     is
@@ -11595,7 +11731,16 @@ end if;
       if l_y + l_max_top - l_lh < l_settings.margin_bottom
       then
         new_or_next_page;
+        l_part := l_part + 1;
         l_y := l_settings.page_height - l_settings.margin_top - l_max_top;
+        if l_outline_part is not null
+        then
+          outline( replace( l_outline_part, '#n#', l_part )
+                 , l_outl_part_lvl
+                 , g_pdf.current_page + 1
+                 , l_y + l_fontsize
+                 );
+        end if;
         if l_header_repeat
         then
           print_header;
@@ -11626,7 +11771,7 @@ end if;
              , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
              , null, null
              , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx ), l_text_color
-             , null
+             , l_ca( p_idx )
              , false, l_tmp_x, l_tmp_y, l_lines, l_page_break
              , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
              );
@@ -11833,10 +11978,14 @@ end if;
     l_min_height := greatest( l_min_height, l_bp + get_font_bottom( l_font, l_fontsize ) + l_max_top );
     l_line_sp := jvs2n( p_options, 'lineSpacing' );
     l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
+    l_align := coalesce( xjv( p_options, 'align' ), xjv( p_options, 'alignment' ) );
+    l_num_fmt := xjv( p_options, 'numberFormat' );
+    l_date_fmt := xjv( p_options, 'dateFormat' );
     --
     for c in 1 .. l_col_cnt
     loop
       l_col_path := 'columns[' || to_char( c - 1 ) || '].';
+      l_ca( c ) := coalesce( xjv( p_options, l_col_path || 'align' ), xjv( p_options, l_col_path || 'alignment' ), l_align );
       l_col_fs := jvs2n( p_options, l_col_path || 'fontSize' );
       l_col_fi := jvs2n( p_options, l_col_path || 'fontIndex' );
       if l_col_fi is null or ( l_col_fi != l_font_index and not g_pdf.fonts.exists( l_col_fi ) )
@@ -11872,7 +12021,7 @@ end if;
                             , l_line_sp
                             , l_col_fs * l_line_spf
                             );
-      l_fmts( c ) := xjv( p_options, l_col_path || 'format' );
+      l_fmts( c ) := coalesce( xjv( p_options, l_col_path || 'format' ), xjv( p_options, l_col_path || 'fmt' ) );
     end loop;
     --
     l_header_col.font_index := jvs2n( p_options, 'headerFontIndex' );
@@ -11890,8 +12039,6 @@ end if;
     l_header_col.bottom_padding := coalesce( l_header_col.bottom_padding, l_bp );
     l_header_col.left_padding   := coalesce( l_header_col.left_padding, l_lp );
     l_header_col.right_padding  := coalesce( l_header_col.right_padding, l_rp );
-    l_num_fmt := xjv( p_options, l_col_path || 'numberFormat' );
-    l_date_fmt := xjv( p_options, l_col_path || 'dateFormat' );
     for c in 1 .. l_col_cnt
     loop
       l_col_path := 'headers[' || to_char( c - 1 ) || '].';
@@ -11934,27 +12081,37 @@ end if;
       l_start_x := p_x;
     end if;
     l_y := coalesce( p_y, g_pdf.y, l_settings.page_height - l_settings.margin_top - l_max_top );
-    if     p_widths is null
-       and (  jvs2n( p_options, 'widths.length()' ) > 0
-           or jvs2n( p_options, 'columns[0].width' ) > 0
-           )
-    then
-      for i in 1 .. l_col_cnt
-      loop
-        l_widths( i ) := coalesce( jvs2n( p_options, 'widths[' || to_char( i - 1 ) || ']' )
-                                 , jvs2n( p_options, 'columns[' || to_char( i - 1 ) || '].width' )
-                                 , 5
-                                 );
-      end loop;
-    else
-      handle_widths( p_widths, l_col_cnt, l_start_x, l_settings, l_widths, jvs2n( p_options, 'width' ) );
-    end if;
+    handle_widths( p_widths, l_col_cnt, l_start_x, l_settings, p_options, l_widths );
     l_line_width := 0;
     for i in 1 .. l_col_cnt
     loop
       l_line_width := l_line_width + l_widths( i );
     end loop;
     --
+    l_outline := ltrim( rtrim( xjv( p_options, 'outline' ) ) );
+    if l_outline is not null
+    then
+      if l_outline like '{%}'
+      then
+        outline( xjv( l_outline, 'title' )
+               , coalesce( jvs2n( l_outline, 'level' ), 1 )
+               , g_pdf.current_page + 1
+               , l_y + l_fontsize
+               );
+        l_outline_part := ltrim( rtrim( xjv( l_outline, 'part' ) ) );
+        if l_outline_part is not null
+        then
+          if l_outline_part like '{%}'
+          then
+            l_outl_part_lvl := jvs2n( l_outline_part, 'level' );
+            l_outline_part := xjv( l_outline_part, 'title' );
+          end if;
+          l_outl_part_lvl := coalesce( l_outl_part_lvl, 2 );
+        end if;
+      else
+        outline( l_outline, 1, g_pdf.current_page + 1, l_y + l_fontsize );
+      end if;
+    end if;
     print_header;
     handle_columns( 1 );  -- define column variables
     l_row_nr := 0;
@@ -12073,7 +12230,7 @@ end if;
         end if;
         if l_type = 'N'
         then
-          l_fmt := xjv( l_bind, 'fmt' );
+          l_fmt := coalesce( xjv( l_bind, 'fmt' ), xjv( l_bind, 'format' ) );
           if l_fmt is null
           then
             dbms_sql.bind_variable( l_cx, l_name, to_number( l_value ) );
@@ -12082,7 +12239,7 @@ end if;
           end if;
         elsif l_type = 'D'
         then
-          l_fmt := xjv( l_bind, 'fmt' );
+          l_fmt := coalesce( xjv( l_bind, 'fmt' ), xjv( l_bind, 'format' ) );
           if l_fmt is null
           then
             dbms_sql.bind_variable( l_cx, l_name, to_date( l_value ) );
@@ -12091,7 +12248,7 @@ end if;
           end if;
         elsif l_type = 'T'
         then
-          l_fmt := xjv( l_bind, 'fmt' );
+          l_fmt := coalesce( xjv( l_bind, 'fmt' ), xjv( l_bind, 'format' ) );
           if l_fmt is null
           then
             dbms_sql.bind_variable( l_cx, l_name, to_timestamp( l_value ) );
@@ -12100,7 +12257,7 @@ end if;
           end if;
         elsif l_type = 'Z'
         then
-          l_fmt := xjv( l_bind, 'fmt' );
+          l_fmt := coalesce( xjv( l_bind, 'fmt' ), xjv( l_bind, 'format' ) );
           if l_fmt is null
           then
             dbms_sql.bind_variable( l_cx, l_name, to_timestamp_tz( l_value ) );
