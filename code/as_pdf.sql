@@ -304,6 +304,8 @@ is
   --
   procedure set_pdf_version( p_version number := 1.4 );
   --
+  procedure set_dpi( p_dpi number := 72 );
+  --
   procedure set_pdfA3
     ( p_conformance                  varchar2 := 'B'
     , p_extra_meta_data_descriptions varchar2 := null
@@ -583,10 +585,11 @@ is
   --
 end as_pdf;
 /
-
 create or replace package body as_pdf
 is
-  c_version            constant varchar2(10) := '0.4.0.2';
+-- https://github.com/pdfcpu/pdfcpu
+-- https://github.com/n8willis/opentype-shaping-documents
+  c_version            constant varchar2(10) := '0.4.0.3';
   c_db_charset         constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
   c_db_ncharset        constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
   c_producer           constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
@@ -848,12 +851,18 @@ is
     , pdf_a3_conformance  varchar2(1)
     , zoom                number
     , fonts_used          boolean
+    , apply_gsub          boolean
+    , apply_gpos          boolean
+    , rtl                 boolean
     , current_font        pls_integer
     , current_page        pls_integer
     , current_font_index  pls_integer
     , x                   number
     , y                   number
     , line_spacing_factor number
+    , dpi                 number
+    , script              varchar2(4)
+    , language            varchar2(4)
     , current_font_size   varchar2(1024)
     , title               varchar2(1024)
     , author              varchar2(1024)
@@ -876,6 +885,7 @@ is
     , font_old_new        tp_matrix
     , gsub_gpos           tp_font_gsub_gpos
     , gdef                tp_font_gdef
+    , enabled_features    tp_features
     , page_procs          tp_page_procs
     , page_settings       tp_settings
     , outlines            tp_outlines
@@ -1031,7 +1041,7 @@ $END
     procedure skip_whitespace
     is
     begin
-      while substrc( p_json, g_idx, 1 ) in ( c_space, c_lf, c_cr, c_ht )
+      while substr( p_json, g_idx, 1 ) in ( c_space, c_lf, c_cr, c_ht )
       loop
         g_idx:= g_idx+ 1;
       end loop;
@@ -1047,22 +1057,22 @@ $END
     procedure skip_object
     is
     begin
-      if substrc( p_json, g_idx, 1 ) = c_start_brace
+      if substr( p_json, g_idx, 1 ) = c_start_brace
       then
         g_idx := g_idx + 1;
         loop
           skip_whitespace;
-          exit when substrc( p_json, g_idx, 1 ) = c_end_brace; -- empty object or object with "trailing comma"
+          exit when substr( p_json, g_idx, 1 ) = c_end_brace; -- empty object or object with "trailing comma"
           skip_value; -- skip name
           skip_whitespace;
-          if substrc( p_json, g_idx, 1 ) != c_colon
+          if substr( p_json, g_idx, 1 ) != c_colon
           then
             raise_application_error( -20002, 'No valid JSON, expected a colon at position ' || g_idx );
           end if;
           g_idx := g_idx + 1; -- skip colon
           skip_value; -- skip value
           skip_whitespace;
-          case substrc( p_json, g_idx, 1 )
+          case substr( p_json, g_idx, 1 )
             when c_comma then g_idx := g_idx + 1;
             when c_end_brace then exit;
             else raise_application_error( -20003, 'No valid JSON, expected a comma or end brace at position ' || g_idx );
@@ -1075,15 +1085,15 @@ $END
     procedure skip_array
     is
     begin
-      if substrc( p_json, g_idx, 1 ) = c_start_bracket
+      if substr( p_json, g_idx, 1 ) = c_start_bracket
       then
         g_idx := g_idx + 1;
         loop
           skip_whitespace;
-          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket; -- empty array or array with "trailing comma"
+          exit when substr( p_json, g_idx, 1 ) = c_end_bracket; -- empty array or array with "trailing comma"
           skip_value;
           skip_whitespace;
-          case substrc( p_json, g_idx, 1 )
+          case substr( p_json, g_idx, 1 )
             when c_comma then g_idx := g_idx + 1;
             when c_end_bracket then exit;
             else raise_application_error( -20004, 'No valid JSON, expected a comma or end bracket at position ' || g_idx );
@@ -1097,15 +1107,15 @@ $END
     is
     begin
       skip_whitespace;
-      case substrc( p_json, g_idx, 1 )
+      case substr( p_json, g_idx, 1 )
         when c_double_quote
         then
           loop
-            g_idx := instrc( p_json, c_double_quote, g_idx + 1 );
-            exit when substrc( p_json, g_idx - 1, 1 ) != c_back_slash
+            g_idx := instr( p_json, c_double_quote, g_idx + 1 );
+            exit when substr( p_json, g_idx - 1, 1 ) != c_back_slash
                    or g_idx = 0
-                   or (   substrc( p_json, g_idx - 2, 2 ) = c_back_slash || c_back_slash
-                      and substrc( p_json, g_idx - 3, 1 ) != c_back_slash
+                   or (   substr( p_json, g_idx - 2, 2 ) = c_back_slash || c_back_slash
+                      and substr( p_json, g_idx - 3, 1 ) != c_back_slash
                       ); -- doesn't handle cases of values ending with multiple (escaped) \
           end loop;
           if g_idx = 0
@@ -1115,7 +1125,7 @@ $END
           g_idx := g_idx + 1;
         when c_single_quote  -- lax parsing
         then
-          g_idx := instrc( p_json, c_single_quote, g_idx + 1 );
+          g_idx := instr( p_json, c_single_quote, g_idx + 1 );
           if g_idx = 0
           then
             raise_application_error( -20006, 'No valid JSON, no end string found' );
@@ -1129,9 +1139,9 @@ $END
           skip_array;
         else -- should be a JSON-number, TRUE, FALSE or NULL, but we don't check for it
              -- any whitespace after this value is also skipped
-          g_idx := least( coalesce( nullif( instrc( p_json, c_comma, g_idx ), 0 ), g_end + 1 )
-                        , coalesce( nullif( instrc( p_json, c_end_brace, g_idx ), 0 ), g_end + 1 )
-                        , coalesce( nullif( instrc( p_json, c_end_bracket, g_idx ), 0 ), g_end  + 1 )
+          g_idx := least( coalesce( nullif( instr( p_json, c_comma, g_idx ), 0 ), g_end + 1 )
+                        , coalesce( nullif( instr( p_json, c_end_brace, g_idx ), 0 ), g_end + 1 )
+                        , coalesce( nullif( instr( p_json, c_end_bracket, g_idx ), 0 ), g_end  + 1 )
                         );
           if g_idx = g_end + 1
           then
@@ -1150,64 +1160,64 @@ $END
       return null;
     end if;
     g_idx := 1;
-    g_end := lengthc( p_json );
+    g_end := length( p_json );
     for i in 1 .. 20 -- max 20 levels deep in p_path
     loop
       l_path := ltrim( l_path, c_ws );
-      l_pos := least( nvl( nullif( instrc( l_path, '.' ), 0 ), 32768 )
-                    , nvl( nullif( instrc( l_path, c_start_bracket ), 0 ), 32768 )
-                    , nvl( nullif( instrc( l_path, c_end_bracket ), 0 ), 32768 )
+      l_pos := least( nvl( nullif( instr( l_path, '.' ), 0 ), 32768 )
+                    , nvl( nullif( instr( l_path, c_start_bracket ), 0 ), 32768 )
+                    , nvl( nullif( instr( l_path, c_end_bracket ), 0 ), 32768 )
                     );
       if l_pos = 32768
       then
         l_name := l_path;
         l_path := null;
-      elsif substrc( l_path, l_pos, 1 ) = '.'
+      elsif substr( l_path, l_pos, 1 ) = '.'
       then
-        l_name := substrc( l_path, 1, l_pos - 1 );
-        l_path := substrc( l_path, l_pos + 1 );
-      elsif substrc( l_path, l_pos, 1 ) = c_start_bracket and l_pos > 1
+        l_name := substr( l_path, 1, l_pos - 1 );
+        l_path := substr( l_path, l_pos + 1 );
+      elsif substr( l_path, l_pos, 1 ) = c_start_bracket and l_pos > 1
       then
-        l_name := substrc( l_path, 1, l_pos - 1 );
-        l_path := substrc( l_path, l_pos );
-      elsif substrc( l_path, l_pos, 1 ) = c_start_bracket and l_pos = 1
+        l_name := substr( l_path, 1, l_pos - 1 );
+        l_path := substr( l_path, l_pos );
+      elsif substr( l_path, l_pos, 1 ) = c_start_bracket and l_pos = 1
       then
-        l_pos := instrc( l_path, c_end_bracket );
+        l_pos := instr( l_path, c_end_bracket );
         if l_pos = 0
         then
           raise_application_error( -20008, 'No valid path, end bracket expected' );
         end if;
-        l_name := substrc( l_path, 1, l_pos );
-        if substrc( l_path, l_pos + 1, 1 ) = '.'
+        l_name := substr( l_path, 1, l_pos );
+        if substr( l_path, l_pos + 1, 1 ) = '.'
         then
-          l_path := substrc( l_path, l_pos + 2 );
+          l_path := substr( l_path, l_pos + 2 );
         else
-          l_path := substrc( l_path, l_pos + 1 );
+          l_path := substr( l_path, l_pos + 1 );
         end if;
       end if;
       l_name := rtrim( l_name, c_ws );
       --
       skip_whitespace;
-      if substrc( p_json, g_idx, 1 ) = c_start_brace and substrc( l_name, 1, 1 ) != c_start_bracket
+      if substr( p_json, g_idx, 1 ) = c_start_brace and substr( l_name, 1, 1 ) != c_start_bracket
       then -- search for a name inside JSON object
            -- json unescape name?
         l_cnt := 0;
         loop
           g_idx := g_idx + 1; -- skip start brace or comma
           skip_whitespace;
-          if substrc( p_json, g_idx, 1 ) = c_end_brace
+          if substr( p_json, g_idx, 1 ) = c_end_brace
           then
             return case when l_name = 'length()' and l_path is null then l_cnt end;
-          elsif substrc( p_json, g_idx, 1 ) = c_comma
+          elsif substr( p_json, g_idx, 1 ) = c_comma
           then  -- two commas without a key-value pair in between is strictly not valid JSON
             continue;
           end if;
           l_start := g_idx;
           skip_value;  -- skip a name
-          l_tmp_name := substrc( p_json, l_start, g_idx - l_start ); -- look back to get the name skipped
+          l_tmp_name := substr( p_json, l_start, g_idx - l_start ); -- look back to get the name skipped
            -- json unescape name?
           skip_whitespace;
-          if substrc( p_json, g_idx, 1 ) != c_colon
+          if substr( p_json, g_idx, 1 ) != c_colon
           then
             raise_application_error( -20002, 'No valid JSON, expected a colon at position ' || g_idx );
           end if;
@@ -1225,7 +1235,7 @@ $END
           else
             l_cnt := l_cnt + 1;
             skip_whitespace;
-            if substrc( p_json, g_idx, 1 ) = c_comma
+            if substr( p_json, g_idx, 1 ) = c_comma
             then
               null; -- OK, keep on searching for name
             else
@@ -1234,7 +1244,7 @@ $END
             end if;
           end if;
         end loop;
-      elsif substrc( p_json, g_idx, 1 ) = c_start_bracket and substrc( l_name, 1, 1 ) = c_start_bracket
+      elsif substr( p_json, g_idx, 1 ) = c_start_bracket and substr( l_name, 1, 1 ) = c_start_bracket
       then
         begin
           l_ind := to_number( rtrim( ltrim( l_name, c_start_bracket ), c_end_bracket ) );
@@ -1246,7 +1256,7 @@ $END
         for i in 0 .. l_ind loop
           g_idx := g_idx + 1; -- skip start bracket or comma
           skip_whitespace;
-          if substrc( p_json, g_idx, 1 ) = c_end_bracket
+          if substr( p_json, g_idx, 1 ) = c_end_bracket
           then
             return null;
           end if;
@@ -1262,7 +1272,7 @@ $END
             exit;
           else
             skip_whitespace;
-            if substrc( p_json, g_idx, 1 ) = c_comma
+            if substr( p_json, g_idx, 1 ) = c_comma
             then
               null; -- OK
             else
@@ -1270,18 +1280,18 @@ $END
             end if;
           end if;
         end loop;
-      elsif substrc( p_json, g_idx, 1 ) = c_start_bracket and l_name = 'length()' and l_path is null
+      elsif substr( p_json, g_idx, 1 ) = c_start_bracket and l_name = 'length()' and l_path is null
       then
         l_cnt := 0;
         loop
           g_idx := g_idx + 1; -- skip start bracket or comma
           skip_whitespace;
-          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket;
+          exit when substr( p_json, g_idx, 1 ) = c_end_bracket;
           l_cnt := l_cnt + 1;
           skip_value;
           skip_whitespace;
-          exit when substrc( p_json, g_idx, 1 ) = c_end_bracket;
-          if substrc( p_json, g_idx, 1 ) != c_comma
+          exit when substr( p_json, g_idx, 1 ) = c_end_bracket;
+          if substr( p_json, g_idx, 1 ) != c_comma
           then
             raise_application_error( -20010, 'No valid JSON, expected a comma at position ' || g_idx );
           end if;
@@ -1294,53 +1304,53 @@ $END
       g_idx := l_rv_start;
       g_end := l_rv_end - 1;
     end loop;
-    if (  (   substrc( p_json, l_rv_start, 1 ) = c_double_quote
-          and substrc( p_json, l_rv_end - 1, 1 ) = c_double_quote
+    if (  (   substr( p_json, l_rv_start, 1 ) = c_double_quote
+          and substr( p_json, l_rv_end - 1, 1 ) = c_double_quote
           )
-       or (   substrc( p_json, l_rv_start, 1 ) = c_single_quote
-          and substrc( p_json, l_rv_end - 1, 1 ) = c_single_quote
+       or (   substr( p_json, l_rv_start, 1 ) = c_single_quote
+          and substr( p_json, l_rv_end - 1, 1 ) = c_single_quote
           )
        )
     then
       l_rv_start := l_rv_start + 1;
       l_rv_end := l_rv_end - 1;
     end if;
-    l_pos := instrc( p_json, c_back_slash, l_rv_start );
-    if l_pos = 0 or l_pos >= l_rv_end or nvl( substrc( upper( p_unescape ), 1, 1 ), 'Y' ) = 'N'
+    l_pos := instr( p_json, c_back_slash, l_rv_start );
+    if l_pos = 0 or l_pos >= l_rv_end or nvl( substr( upper( p_unescape ), 1, 1 ), 'Y' ) = 'N'
     then -- no JSON unescaping needed
-      return trim( substrc( p_json, l_rv_start, l_rv_end - l_rv_start ) );
+      return trim( substr( p_json, l_rv_start, l_rv_end - l_rv_start ) );
     end if;
     l_start := l_rv_start;
     loop
-      l_chr := substrc( p_json, l_pos + 1, 1 );
+      l_chr := substr( p_json, l_pos + 1, 1 );
       if l_chr in ( '"', '\', '/' )
       then
-        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+        l_rv := l_rv || ( substr( p_json, l_start, l_pos - l_start ) || l_chr );
       elsif l_chr in ( 'b', 'f', 'n', 'r', 't' )
       then
         l_chr := translate( l_chr
                           , 'btnfr'
                           , chr(8) || chr(9) || chr(10) || chr(12) || chr(13)
                           );
-        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+        l_rv := l_rv || ( substr( p_json, l_start, l_pos - l_start ) || l_chr );
       elsif l_chr = 'u'
       then -- unicode character
         if l_nchar
         then
-          l_chr := utl_i18n.raw_to_nchar( hextoraw( substrc( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
+          l_chr := utl_i18n.raw_to_nchar( hextoraw( substr( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
         else
-          l_chr := utl_i18n.raw_to_char( hextoraw( substrc( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
+          l_chr := utl_i18n.raw_to_char( hextoraw( substr( p_json, l_pos + 2, 4 ) ), 'AL16UTF16' );
         end if;
-        l_rv := l_rv || ( substrc( p_json, l_start, l_pos - l_start ) || l_chr );
+        l_rv := l_rv || ( substr( p_json, l_start, l_pos - l_start ) || l_chr );
         l_pos := l_pos + 4;
       else
         raise_application_error( -20011, 'No valid JSON, unexpected back slash  at position ' || l_pos );
       end if;
       l_start := l_pos + 2;
-      l_pos := instrc( p_json, c_back_slash, l_start );
+      l_pos := instr( p_json, c_back_slash, l_start );
       if l_pos = 0 or l_pos >= l_rv_end
       then
-        l_rv := l_rv || substrc( p_json, l_start, l_rv_end - l_start );
+        l_rv := l_rv || substr( p_json, l_start, l_rv_end - l_start );
         exit;
       end if;
     end loop;
@@ -1379,6 +1389,14 @@ $END
   begin
     return coalesce( upper( rtrim( ltrim( xjv( p_options, p_path ) ) ) ) = 'TRUE', false );
   end jvs2b;
+  --
+  function jvs2bn( p_options varchar2 character set any_cs, p_path varchar2 )
+  return boolean
+  is
+    l_tmp constant varchar2(100) := upper( substr( rtrim( ltrim( xjv( p_options, p_path ) ) ), 1, 5 ) );
+  begin
+    return case when l_tmp = 'TRUE'then true when l_tmp is not null then false end;
+  end jvs2bn;
   --
   function gfi( p_font_index pls_integer )
   return pls_integer
@@ -1437,6 +1455,17 @@ $END
     end if;
   end set_pdf_version;
   --
+  procedure set_dpi( p_dpi number := 72 )
+  is
+  begin
+    if p_dpi is null
+    then
+      set_dpi;
+    else
+      g_pdf.dpi := p_dpi;
+    end if;
+  end set_dpi;
+  --
   procedure set_pdfA3
     ( p_conformance                  varchar2 := 'B'
     , p_extra_meta_data_descriptions varchar2 := null
@@ -1482,7 +1511,10 @@ $END
     )
   is
   begin
-null;
+    g_pdf.script   := substr( p_script, 1, 4 );
+    g_pdf.language := substr( p_language, 1, 4 );
+    g_pdf.apply_gsub := p_apply_gsub;
+    g_pdf.apply_gpos := p_apply_gpos;
   end set_open_type_features;
   --
   procedure set_current_page( p_page number )
@@ -1508,7 +1540,8 @@ null;
   function conv2uu( p_value number, p_unit varchar2 )
   return number
   is
-    c_inch constant number := 25.40025;
+    c_inch  constant number := 25.40025;
+    c_px2mm constant number := round( c_inch / g_pdf.dpi, 3 ); -- default 72 DPI    
   begin
     return round( case coalesce( lower( p_unit ), 'cm' )
                     when 'mm'    then p_value * 72 / c_inch
@@ -1520,24 +1553,25 @@ null;
                     when 'pica'  then p_value * 12
                     when 'p'     then p_value * 12  -- also pica
                     when 'pc'    then p_value * 12  -- also pica
-                    when 'px'    then p_value * 1.0007 -- Jasper Reports pixel
-                    when 'pixel' then p_value * 1.0007 -- Jasper Reports pixel
+                    when 'px'    then p_value * c_px2mm * 72 / c_inch -- Jasper Reports seems to use the DPI -> mm -> inch route
+                    when 'pixel' then p_value * c_px2mm * 72 / c_inch -- Jasper Reports seems to use the DPI -> mm -> inch route
+                    when 'uu'    then p_value       -- user unit 
                     else null
                   end
                 , 3
                 );
   end conv2uu;
   --
-  procedure set_settings( p_page_size        varchar2
-                        , p_page_orientation varchar2
-                        , p_page_width       number
-                        , p_page_height      number
-                        , p_margin_left      number
-                        , p_margin_right     number
-                        , p_margin_top       number
-                        , p_margin_bottom    number
-                        , p_unit             varchar2
-                        , p_text_direction   varchar2
+  procedure set_settings( p_page_size        varchar2 := null
+                        , p_page_orientation varchar2 := null
+                        , p_page_width       number   := null
+                        , p_page_height      number   := null
+                        , p_margin_left      number   := null
+                        , p_margin_right     number   := null
+                        , p_margin_top       number   := null
+                        , p_margin_bottom    number   := null
+                        , p_unit             varchar2 := null
+                        , p_text_direction   varchar2 := null
                         , p_settings in out tp_settings
                         )
   is
@@ -1627,19 +1661,19 @@ null;
   procedure set_page_format( p_format varchar2 := 'A4' )
   is
   begin
-    init_pdf( p_page_size => p_format );
+    set_settings( p_settings => g_pdf.page_settings, p_page_size => p_format );
   end;
   --
   procedure set_page_orientation( p_orientation varchar2 := 'PORTRAIT' )
   is
   begin
-    init_pdf( p_page_orientation => p_orientation );
+    set_settings( p_settings => g_pdf.page_settings, p_page_orientation => p_orientation );
   end;
   --
   procedure set_text_direction( p_text_direction varchar2 := 'L2R' )
   is
   begin
-    init_pdf( p_text_direction => p_text_direction );
+    set_settings( p_settings => g_pdf.page_settings, p_text_direction => p_text_direction );
   end set_text_direction;
   --
   procedure set_page_size
@@ -1649,10 +1683,11 @@ null;
     )
   is
   begin
-    init_pdf( p_page_width  => p_width
-            , p_page_height => p_height
-            , p_unit        => p_unit
-            );
+    set_settings( p_settings    => g_pdf.page_settings
+                , p_page_width  => p_width
+                , p_page_height => p_height
+                , p_unit        => p_unit
+                );
   end;
   --
   procedure set_margins
@@ -1664,12 +1699,13 @@ null;
     )
   is
   begin
-    init_pdf( p_margin_left   => p_left
-            , p_margin_right  => p_right
-            , p_margin_top    => p_top
-            , p_margin_bottom => p_bottom
-            , p_unit          => p_unit
-            );
+    set_settings( p_settings      => g_pdf.page_settings
+                , p_margin_left   => p_left
+                , p_margin_right  => p_right
+                , p_margin_top    => p_top
+                , p_margin_bottom => p_bottom
+                , p_unit          => p_unit
+                );
   end;
   --
   procedure init_core_fonts
@@ -2022,6 +2058,10 @@ null;
       then
         g_pdf.font_width_cache( i ).delete;
       end if;
+      if g_pdf.font_width_cache.exists( - i )
+      then
+        g_pdf.font_width_cache( - i ).delete;
+      end if;
       if g_pdf.font_old_new.exists( i )
       then
         g_pdf.font_old_new( i ).delete;
@@ -2076,30 +2116,7 @@ null;
   procedure init
   is
   begin
-    cleanup;
-    if dbms_lob.istemporary( g_pdf.pdf_blob ) = 1
-    then
-      dbms_lob.freetemporary( g_pdf.pdf_blob );
-    end if;
-$IF dbms_db_version.ver_le_11
-$THEN
-    g_pdf := null;
-$ELSIF dbms_db_version.ver_le_12
-$THEN
-    g_pdf := null;
-$ELSE
-    g_pdf := tp_pdf();
-$END
     init_pdf;
-    init_core_fonts;
-    init_color_names;
-    init_unicode_data;
-    --
-    g_hex.delete;
-    for i in 0 .. 255
-    loop
-      g_hex( to_char( i, 'fm0X' ) ) := i;
-    end loop;
   end init;
   --
   function blob2num( p_blob blob, p_len integer, p_pos integer )
@@ -2208,7 +2225,7 @@ $END
       font2page( p_font_index, p_fontsize );
     elsif p_font_index is null
     then
-      font2page( g_pdf.current_font, coalesce( g_pdf.fonts( g_pdf.current_font ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize ) );
+      font2page( g_pdf.current_font, coalesce( g_pdf.fonts( g_pdf.current_font ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize ) ); 
     end if;
   end font2page_i;
   --
@@ -4672,7 +4689,7 @@ end' ) );   -- self + 4
             exit;
           end if;
         end loop;
-      end if;
+      end if;   
       l_parent( i ) := l_cur_parent;
       l_last( l_cur_parent ) := i;
       l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + 1;
@@ -4681,7 +4698,7 @@ end' ) );   -- self + 4
     loop
       if l_cnt.exists( i )
       then
-        l_cur_parent := l_parent( i );
+        l_cur_parent := l_parent( i ); 
          l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + l_cnt( i );
       end if;
     end loop;
@@ -4873,6 +4890,24 @@ end' ) );   -- self + 4
                     )
   is
   begin
+    cleanup;
+    if dbms_lob.istemporary( g_pdf.pdf_blob ) = 1
+    then
+      dbms_lob.freetemporary( g_pdf.pdf_blob );
+    end if;
+$IF dbms_db_version.ver_le_12
+$THEN
+    g_pdf := null;
+$ELSE
+    g_pdf := tp_pdf();
+$END
+    --
+    g_hex.delete;
+    for i in 0 .. 255
+    loop
+      g_hex( to_char( i, 'fm0X' ) ) := i;
+    end loop;
+    --
     set_settings( p_page_size
                 , p_page_orientation
                 , p_page_width
@@ -4885,6 +4920,10 @@ end' ) );   -- self + 4
                 , p_text_direction
                 , g_pdf.page_settings
                 );
+    init_core_fonts;
+    init_color_names;
+    init_unicode_data;
+    set_dpi;
     set_pdf_version;
     set_line_spacing_factor;
   end init_pdf;
@@ -5140,19 +5179,7 @@ end' ) );   -- self + 4
     )
   is
   begin
-$IF dbms_db_version.ver_le_11
-$THEN
-    declare
-      l_pp tp_page_proc;
-    begin
-      l_pp.page_nr := p_page_nr;
-      l_pp.proc := p_proc;
-      l_pp.nums := p_nums;
-      l_pp.chars := p_chars;
-      l_pp.nchar := p_nchar;
-      g_pdf.page_procs( g_pdf.page_procs.count ) := l_pp;
-    end;
-$ELSIF dbms_db_version.ver_le_12
+$IF dbms_db_version.ver_le_12
 $THEN
     declare
       l_pp tp_page_proc;
@@ -5337,25 +5364,25 @@ $END
         l_radius := least( p_radius, p_width / 2, p_height / 2);
         l_a := l_radius;
         l_b := .55228474983 * l_radius;
-      txt2page(  ' 1 0 0 1 '
-              || to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' cm '
-              || to_char_round( l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' m '
-              || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( - l_a + l_radius, 5 ) || ' '
-              || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( - l_b + l_radius, 5 ) || ' '
-              || to_char_round( 0, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' c '
-              || to_char_round( 0, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' l '
-              || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
-              || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
-              || to_char_round( l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' c '
-              || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' l '
-              || to_char_round( l_b - l_radius + p_width, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
-              || to_char_round( l_a - l_radius+ p_width, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
-              || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' c '
-              || to_char_round( p_width, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' l '
-              || to_char_round( l_a + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_b, 5 ) || ' '
-              || to_char_round( l_b + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_a, 5 ) || ' '
-              || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' c '
-              );
+        txt2page(  ' 1 0 0 1 '
+                || to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' cm '
+                || to_char_round( l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' m '
+                || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( - l_a + l_radius, 5 ) || ' '
+                || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( - l_b + l_radius, 5 ) || ' '
+                || to_char_round( 0, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' c '
+                || to_char_round( 0, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' l '
+                || to_char_round( - l_a + l_radius, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
+                || to_char_round( - l_b + l_radius, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
+                || to_char_round( l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' c '
+                || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' l '
+                || to_char_round( l_b - l_radius + p_width, 5 ) || ' ' || to_char_round( l_a - l_radius + p_height, 5 ) || ' '
+                || to_char_round( l_a - l_radius+ p_width, 5 ) || ' ' || to_char_round( l_b - l_radius + p_height, 5 ) || ' '
+                || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height - l_radius, 5 ) || ' c '
+                || to_char_round( p_width, 5 ) || ' ' || to_char_round( l_radius, 5 ) || ' l '
+                || to_char_round( l_a + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_b, 5 ) || ' '
+                || to_char_round( l_b + p_width - l_radius, 5 ) || ' ' || to_char_round( l_radius - l_a, 5 ) || ' '
+                || to_char_round( p_width - l_radius, 5 ) || ' ' || to_char_round( 0, 5 ) || ' c '
+                );
       else
         txt2page(  to_char_round( p_x, 5 ) || ' ' || to_char_round( p_y, 5 ) || ' '
                 || to_char_round( p_width, 5 ) || ' ' || to_char_round( p_height, 5 ) || ' re '
@@ -8052,7 +8079,7 @@ $END
             if 2 + l_to_do + 2 * l_tmp > l_sz
             then
               l_buf := l_buf || dbms_lob.substr( p_font, 2 * ( 2 + l_to_do + 2 * l_tmp - l_sz ), p_offs + 2 * l_sz );
-            end if;
+            end if; 
             l_subtable.matrix( l_glyph )( l_bias + 20 ) := l_to_do;
             for i in 0 .. l_to_do - 1
             loop
@@ -8128,7 +8155,7 @@ $END
                 l_subtable.matrix( l_glyph )( 0 ) := 0;
               end if;
             end loop;
-          else
+          else      
 -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-3-coverage-based-glyph-contexts
             l_to_do := uint16( substr( l_buf, 5, 4 ) );
             l_seq_lu_cnt := uint16( substr( l_buf, 9, 4 ) );
@@ -8399,19 +8426,19 @@ $END
             l_glyph := l_bt_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 1 ) := l_bt_class( l_glyph );
+              l_subtable.matrix( - l_glyph )( 1 ) := l_bt_class( l_glyph );            
               l_glyph := l_bt_class.next( l_glyph );
             end loop;
             l_glyph := l_lah_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 3 ) := l_lah_class( l_glyph );
+              l_subtable.matrix( - l_glyph )( 3 ) := l_lah_class( l_glyph );            
               l_glyph := l_lah_class.next( l_glyph );
             end loop;
             l_glyph := l_inp_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 2 ) := l_inp_class( l_glyph );
+              l_subtable.matrix( - l_glyph )( 2 ) := l_inp_class( l_glyph );            
               l_glyph := l_inp_class.next( l_glyph );
             end loop;
             for i in 0 .. l_coverage.count - 1
@@ -8431,7 +8458,7 @@ $END
                 parse_chained_seq_rule_set( p_offs + l_offs );
               else
                 l_subtable.matrix( l_glyph )( 0 ) := 0;
-              end if;
+              end if;              
             end loop;
           end if;
           l_lookup.subtables( p_idx ) := l_subtable;
@@ -8491,7 +8518,7 @@ $END
               when 5 then parse_lookup_type5( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 6 then parse_lookup_type6( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 7 then parse_lookup_type7( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
-else null;
+else null;--dbms_output.put_line( 'not parsed GSUB lookup type ' || l_lookup.lookup_type );
             end case;
             l_done := l_done + 1;
           end loop;
@@ -9049,7 +9076,7 @@ else null;
               when 6 then parse_lookup_mark_to( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 8 then parse_lookup_type8( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 9 then parse_lookup_type9( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
-else null;
+else null;--dbms_output.put_line( 'not parsed GPOS lookup type ' || l_lookup.lookup_type );
             end case;
             l_done := l_done + 1;
           end loop;
@@ -9348,6 +9375,20 @@ else null;
         end if;
       end loop;
     end loop;
+    declare
+      l_code pls_integer;
+    begin
+      l_code := g_pdf.font_code_cache( l_idx ).last;
+      while l_code > 0
+      loop
+        l_glyph := g_pdf.font_code_cache( l_idx )( l_code );
+        if g_pdf.font_width_cache( l_idx ).exists( l_glyph )
+        then
+          g_pdf.font_width_cache( l_idx )( - l_code ) := g_pdf.font_width_cache( l_idx )( l_glyph );
+        end if;
+        l_code := g_pdf.font_code_cache( l_idx ).prior( l_code );
+      end loop;
+    end;
     --
     l_offs := l_tables( 'name' ).offset;
     l_buf := dbms_lob.substr( p_font, least( l_tables( 'name' ).length, 16380 ), l_offs );
@@ -9762,7 +9803,7 @@ $END
       loop
         if l_len < 16384
         then
-          l_code := g_hex( substr( l_tmp, 2 * i - 1, 2 ) );
+          l_code := g_hex( substr( l_buf, 2 * i - 1, 2 ) );
         else
           l_code := g_hex( rawtohex( utl_raw.substr( l_tmp, i, 1 ) ) );
         end if;
@@ -9777,6 +9818,7 @@ $END
       for i in 1 .. length( p_txt )
       loop
         l_code := to_number( utl_raw.substr( l_tmp, i * 2 - 1,  2 ), '0XXX' );
+
         if g_pdf.font_width_cache( l_font_index ).exists( - l_code )
         then
           l_width := l_width + g_pdf.font_width_cache( l_font_index )( - l_code );
@@ -9806,6 +9848,32 @@ $END
     l_rv      tp_pls_tab;
     l_tmp     tp_pls_tab;
   begin
+if p_gsub_gpos.table_type member of p_features then
+for i in 1 .. p_gsub_gpos.script_list.count
+loop
+  l_script := p_gsub_gpos.script_list( i );
+dbms_output.put_line( l_script.tag );
+  for j in l_script.script_table.first .. l_script.script_table.last
+  loop
+dbms_output.put_line( '  ' || j || ' ' || l_script.script_table( j ).tag );
+    l_tmp := l_script.script_table( j ).feature_indices;
+    for f in l_tmp.first .. l_tmp.last
+    loop
+      if f = 0 and l_tmp( 0 ) is null
+      then  -- no required feature
+        continue;
+      end if;
+      l_feature := p_gsub_gpos.feature_list( l_tmp( f ) );
+dbms_output.put_line( '    ' || f || ' ' || l_feature.tag );
+      for l in 1 .. l_feature.lookups.count
+      loop
+        l_lookup := p_gsub_gpos.lookup_list( l_feature.lookups( l ) );
+dbms_output.put_line( '      lookup ' || l || ' = ' || l_feature.lookups( l ) || ' ' || p_gsub_gpos.lookup_list( l_feature.lookups( l ) ).lookup_type );
+      end loop;
+    end loop;
+  end loop;
+end loop;
+end if;
     --
     if p_gsub_gpos.script_list is null or p_gsub_gpos.script_list.count = 0
     then
@@ -10172,7 +10240,7 @@ $END
     end apply_lookup;
     --
   begin
-    if not p_apply or not g_pdf.gsub_gpos.exists( p_font_index )
+    if p_apply is null or not p_apply or not g_pdf.gsub_gpos.exists( p_font_index )
     then
       return p_glyphs;
     end if;
@@ -10219,6 +10287,7 @@ $END
     , p_features   tp_features
     , p_apply      boolean
     , p_rtl        boolean
+    , p_new_tw     number
     )
   return raw
   is
@@ -10235,6 +10304,7 @@ $END
     l_cnt          pls_integer;
     l_idx          pls_integer;
     l_mark         pls_integer;
+    l_space        pls_integer;
     l_anchor       pls_integer;
     l_glyph        pls_integer;
     l_current      pls_integer;
@@ -10465,6 +10535,10 @@ $END
     l_cnt := p_glyphs.count;
     l_font := g_pdf.fonts( p_font_index );
     l_last := g_pdf.font_width_cache( p_font_index )( g_pdf.font_width_cache( p_font_index ).last );
+    if g_pdf.font_code_cache( p_font_index ).exists( 32 )
+    then
+      l_space := g_pdf.font_code_cache( p_font_index )( 32 );
+    end if;
     --
     for i in 1 .. l_cnt
     loop
@@ -10474,7 +10548,7 @@ $END
       l_shape_run( i ) := l_shape;
     end loop;
     --
-    if p_apply and g_pdf.gsub_gpos.exists( - p_font_index )
+    if p_apply and g_pdf.gsub_gpos.exists( - p_font_index ) 
     then
       l_features := ordered_features( g_pdf.gsub_gpos( - p_font_index ), p_script, p_lang_sys, p_features, null );
       for f in 0 .. l_features.count - 1
@@ -10516,19 +10590,24 @@ $END
       then
         l_tmp_x := l_x;
         l_x := l_x + p_scaled_sz * ( l_shape.width + coalesce( l_shape.val_rec.xAdvance, 0 ) );
-        l_rv := l_rv || '> Tj 1 0 0 1 '
+        l_rv := l_rv || '>] TJ 1 0 0 1 '
           || to_char_round( l_tmp_x + coalesce( p_scaled_sz * l_shape.val_rec.xPlacement, 0 ) ) || ' '
           || to_char_round( l_y + coalesce( p_scaled_sz * l_shape.val_rec.yPlacement, 0 ) ) || ' Tm '
-          || '<' || to_char( l_glyph, 'FM0XXX' ) || '> Tj 1 0 0 1 '
+          || '[<' || to_char( l_glyph, 'FM0XXX' ) || '> ] TJ 1 0 0 1 '
           || to_char_round( l_x ) || ' '
-          || to_char_round( l_y ) || ' Tm <';
+          || to_char_round( l_y ) || ' Tm [<';
       elsif l_shape.val_rec.xAdvance != 0 or l_shape.val_rec.yAdvance != 0
       then
         l_x := l_x + p_scaled_sz * ( l_shape.width + coalesce( l_shape.val_rec.xAdvance, 0 ) );
-        l_rv := l_rv || to_char( l_glyph, 'FM0XXX' ) || '> Tj 1 0 0 1 '
+        l_rv := l_rv || to_char( l_glyph, 'FM0XXX' ) || '>] TJ 1 0 0 1 '
           || to_char_round( l_x ) || ' '
-          || to_char_round( l_y + coalesce( p_scaled_sz * l_shape.val_rec.yAdvance, 0 ) ) || ' Tm <';
+          || to_char_round( l_y + coalesce( p_scaled_sz * l_shape.val_rec.yAdvance, 0 ) ) || ' Tm [<';
       else
+       if p_new_tw is not null and l_shape.glyph = l_space
+        then
+          l_rv := l_rv || '>' || to_char_round( p_new_tw, 0 ) || '<';
+          l_x := l_x - p_scaled_sz * p_new_tw;
+        end if;
         l_rv := l_rv || to_char( l_glyph, 'FM0XXX' );
         l_x := l_x + p_scaled_sz * l_shape.width;
       end if;
@@ -10549,6 +10628,7 @@ $END
     , p_apply_gsub  boolean
     , p_apply_gpos  boolean
     , p_rtl         boolean
+    , p_new_tw      number
     )
   return raw
   is
@@ -10580,14 +10660,14 @@ $END
     then
       return null;
     end if;
-    l_font_index := gfi( p_font_index );
+    l_font_index := p_font_index;
     g_pdf.fonts( l_font_index ).used := true;
     l_font := g_pdf.fonts( l_font_index );
     --
     if l_font.standard
     then
--- https://sourceforge.net/p/pljrxml2pdf/discussion/general/thread/03abc63d13/#b621
       return string2raw( '(' || replace(
+                                replace(
                                 replace(
                                 replace(
                                 replace(
@@ -10597,6 +10677,7 @@ $END
                                        , c_lp, c_lp_to )
                                        , c_rp, c_rp_to )
                                        , c_ht, c_ht_to )
+                                       , ' ', case when p_new_tw is null then ' ' else ') ' || to_char_round( p_new_tw, 0 ) || '( ' end )
                                        , c_lf, c_lf_to )
                                        , c_cr, c_cr_to ) || ')'
                        , 'WE8MSWIN1252'
@@ -10624,12 +10705,15 @@ $END
       end if;
     end loop;
     --
-    l_gsub_glyphs := apply_gsub( l_font_index, l_glyphs, p_script, p_lang_sys, p_features, case when 'logs' member of p_features then '{"log":true}' else '{}' end, p_apply_gsub );
+    l_gsub_glyphs := apply_gsub( l_font_index, l_glyphs, p_script, p_lang_sys, p_features, case when 'logs' member of p_features then '{"log":true}' else '{}' end, coalesce( p_apply_gsub, g_pdf.apply_gsub ) );
     --
     for i in 1 .. l_gsub_glyphs.count
     loop
       l_glyph := l_gsub_glyphs( i );
-      g_pdf.font_glyph_cache( l_font_index )( l_glyph ) := case when l_glyph2code.exists( l_glyph ) then l_glyph2code( l_glyph ) end;
+      if l_glyph2code.exists( l_glyph )
+      then
+        g_pdf.font_glyph_cache( l_font_index )( l_glyph ) := l_glyph2code( l_glyph );
+      end if;
       if not g_pdf.font_old_new( l_font_index ).exists( l_glyph )
       then
         if l_font.cff and l_font.subset
@@ -10644,7 +10728,7 @@ $END
       end if;
     end loop;
     --
-    return apply_gpos( l_font_index, l_gsub_glyphs, p_x, p_y, p_fontsize * l_font.unit_norm / 1000, p_script, p_lang_sys, p_features, p_apply_gpos, p_rtl );
+    return apply_gpos( l_font_index, l_gsub_glyphs, p_x, p_y, p_fontsize * l_font.unit_norm / 1000, p_script, p_lang_sys, p_features, coalesce( p_apply_gpos, g_pdf.apply_gpos ), p_rtl, p_new_tw );
   end txt2raw;
   --
   procedure put_raw
@@ -10681,9 +10765,9 @@ $END
       l_tmp := to_char_round( l_cos, 5 )   || ' ' || l_tmp;
       l_tmp := l_tmp || ' Tm ';
     end if;
-    raw2page( utl_raw.concat( utl_raw.cast_to_raw( 'BT ' || l_tmp )
+    raw2page( utl_raw.concat( utl_raw.cast_to_raw( 'BT ' || l_tmp || ' [' )
                             , p_txt
-                            , utl_raw.cast_to_raw( ' Tj ET' )
+                            , utl_raw.cast_to_raw( '] TJ ET' )
                             )
               );
     --
@@ -10712,6 +10796,7 @@ $END
     , p_apply_gsub  boolean
     , p_apply_gpos  boolean
     , p_rtl         boolean
+    , p_tw          number := null
     )
   is
   begin
@@ -10721,7 +10806,7 @@ $END
     end if;
     g_pdf.fonts_used := true;
     put_raw( p_x, p_y
-           , txt2raw( p_txt, p_font_index, p_fontsize, p_x, p_y, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl )
+           , txt2raw( p_txt, p_font_index, p_fontsize, p_x, p_y, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl, p_tw )
            , p_degrees_rot
            , p_font_index
            , p_fontsize
@@ -10834,8 +10919,9 @@ $END
         put_txt_i( p_x, p_y, p_txt, p_degrees_rotation, l_font_index, l_fontsize, p_color
                  , xjv( p_options, 'script' ), xjv( p_options, 'langSys' )
                  , get_features( p_options )
-                 , jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' )
-                 , jvs2b( p_options, 'RTL' )
+                 , jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' )
+                 , jvs2bn( p_options, 'RTL' )
+                 , jvs2n( p_options, 'tw' )
                  );
         if l_alpha between 0 and 1
         then
@@ -10891,7 +10977,7 @@ $END
     , p_new_y      in out number
     , p_lines      in out pls_integer
     , p_page_break in out boolean
-    , p_options varchar2 := null
+    , p_options     varchar2 := null
     , p_script      varchar2    := null
     , p_lang_sys    varchar2    := null
     , p_features    tp_features := null
@@ -10903,6 +10989,7 @@ $END
   is
     l_len    number;
     l_pos    pls_integer;
+    l_spaces pls_integer;
     --
     procedure wt
       ( p_txt varchar2 character set any_cs
@@ -10983,7 +11070,7 @@ $END
     then
       if not p_dry_run
       then
-        case lower( substr( p_align, 1, 1 ) )
+       case lower( substr( p_align, 1, 1 ) )
           when 'r' then
             put_txt_i( p_xmax - l_len, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
@@ -10991,6 +11078,12 @@ $END
           when 'c' then
             put_txt_i( ( p_x + p_xmax - l_len ) / 2, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     );
+          when 'j' then
+            l_spaces := length( p_txt ) - length( translate( p_txt, '# ', '#' ) );
+            put_txt_i( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color
+                     , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     , case when l_spaces > 0 then ( 1000 / p_fontsize ) * ( p_x + l_len - p_xmax ) / l_spaces end
                      );
           else
             put_txt_i( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color
@@ -11064,7 +11157,7 @@ $END
          , l_settings.margin_bottom, l_settings.page_height - l_settings.margin_top - l_fontsize
          , l_font_index, l_fontsize, g_pdf.line_spacing_factor * l_fontsize, p_color, null
          , false, g_pdf.x, g_pdf.y, l_lines, l_page_break
-         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
          );
     end if;
   exception
@@ -11287,9 +11380,9 @@ $END
          , l_x + l_lp + 0.5 * l_lw, l_x + l_width - l_rp - 0.5 * l_lw
          , null, null
          , l_font_index, l_fontsize, l_line_sp
-         , l_text_color, null
+         , l_text_color, p_align
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
-         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
          );
       exception
         when e_no_fit then
@@ -11327,7 +11420,9 @@ $END
                            );
       --
       l_x := coalesce( p_x, l_settings.margin_left );
-      l_width := coalesce( p_width, jvs2n( p_options, 'width' ), l_settings.page_width - l_settings.margin_right - l_x );
+      l_width := coalesce( p_width, jvs2n( p_options, 'width' )
+                         , least( str_len( p_txt, l_font_index, l_fontsize ) + l_lp + l_rp, l_settings.page_width - l_settings.margin_right - l_x )
+                         );
       l_widths( 1 ) := l_width;
       --
       wt( true );
@@ -11338,6 +11433,8 @@ $END
         , l_widths, l_fill_color, l_line_color, l_lw
         );
       wt( false );
+      g_pdf.x := l_x + l_width;
+      g_pdf.y := p_y - l_mh - l_lw - l_bp - l_tp;
       if p_url is not null
       then
         annot( p_subtype    => 'Link'
@@ -11430,9 +11527,9 @@ $END
          , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
          , null, null
          , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx )
-         , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end, null
+         , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end, p_align
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
-         , null, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2b( p_options, 'applyGSUB' ), jvs2b( p_options, 'applyGPOS' ), jvs2b( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
          );
       exception
         when e_no_fit then
@@ -11575,12 +11672,15 @@ $END
     l_col_fi        pls_integer;
     l_row_nr        pls_integer;
     l_font_index    pls_integer;
+    l_odd_even      pls_integer := 0;
     l_part          pls_integer := 1;
     l_outl_part_lvl pls_integer;
     l_col_path      varchar2(100);
     l_align         varchar2(256);
+    l_hdr_align     varchar2(256);
     l_num_fmt       varchar2(256);
     l_date_fmt      varchar2(256);
+    l_style         varchar2(32767);
     l_text_color    varchar2(32767);
     l_fill_color    varchar2(32767);
     l_line_color    varchar2(32767);
@@ -11588,7 +11688,8 @@ $END
     l_even_color    varchar2(32767);
     l_options       varchar2(32767);
     l_outline       varchar2(32767);
-    l_outline_part  varchar2(32767);
+    l_outline_part  varchar2(32767); 
+    l_styles        varchar2(32767);
     l_script        varchar2(10);
     l_lang_sys      varchar2(10);
     l_apply_gsub    boolean;
@@ -11636,8 +11737,8 @@ $END
     l_header_col  tp_header_col;
     l_header_cols tp_header_cols;
     type tp_fmts is table of varchar2(256) index by pls_integer;
-    l_fmts tp_fmts;
-    l_ca   tp_fmts;
+    l_fmts   tp_fmts;
+    l_ca     tp_fmts;
     --
     procedure print_header
     is
@@ -11673,7 +11774,7 @@ $END
            , l_x + l_header_cols( p_idx ).left_padding + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_header_cols( p_idx ).right_padding - 0.5 * l_lw
            , null, null
            , l_header_cols( p_idx ).font_index, l_header_cols( p_idx ).font_size, l_header_cols( p_idx ).line_spacing
-           , l_header_cols( p_idx ).text_color, null
+           , l_header_cols( p_idx ).text_color, l_hdr_align
            , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_page_break
            , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
            );
@@ -11741,6 +11842,7 @@ $END
                  , l_y + l_fontsize
                  );
         end if;
+        l_odd_even := 1 - bitand( l_row_nr, 1 );
         if l_header_repeat
         then
           print_header;
@@ -11944,9 +12046,9 @@ $END
     l_script     := xjv( p_options, 'script' );
     l_lang_sys   := xjv( p_options, 'langSys' );
     l_features   := get_features( p_options );
-    l_rtl        := jvs2b( p_options, 'RTL' );
-    l_apply_gsub := jvs2b( p_options, 'applyGSUB' );
-    l_apply_gpos := jvs2b( p_options, 'applyGPOS' );
+    l_rtl        := jvs2bn( p_options, 'RTL' );
+    l_apply_gsub := jvs2bn( p_options, 'applyGSUB' );
+    l_apply_gpos := jvs2bn( p_options, 'applyGPOS' );
     l_options := null;
     dbms_sql.describe_columns2( p_cursor, l_col_cnt, l_desc_tab );
     --
@@ -11954,6 +12056,87 @@ $END
     then
       new_page;
     end if;
+    --
+    l_style := xjv( p_options, 'style' );
+    if xjv( p_options, 'style' ) is not null
+    then
+      -- Excel Table Style from Office Theme 2013
+      l_styles := '%light%10%     000000FFFFFFFFFFFFED7D31FFFFFF' ||
+                  '%light%11%     000000FFFFFFFFFFFFA5A5A5FFFFFF' ||
+                  '%light%12%     000000FFFFFFFFFFFFFFC000FFFFFF' ||
+                  '%light%13%     000000FFFFFFFFFFFF5B9BD5FFFFFF' ||
+                  '%light%14%     000000FFFFFFFFFFFF70AD47FFFFFF' ||
+                  '%light%15%     000000D9D9D9FFFFFFFFFFFF000000' ||
+                  '%light%16%     000000D9E1F2FFFFFFFFFFFF000000' ||
+                  '%light%17%     000000FCE4D6FFFFFFFFFFFF000000' ||
+                  '%light%18%     000000EDEDEDFFFFFFFFFFFF000000' ||
+                  '%light%19%     000000FFF2CCFFFFFFFFFFFF000000' ||
+                  '%light%20%     000000DDEBF7FFFFFFFFFFFF000000' ||
+                  '%light%21%     000000E2EFDAFFFFFFFFFFFF000000' ||
+                  '%light%1%      000000D9D9D9FFFFFFFFFFFF000000' ||
+                  '%light%2%      000000D9E1F2FFFFFFFFFFFF305496' ||
+                  '%light%3%      000000FCE4D6FFFFFFFFFFFFC65911' ||
+                  '%light%4%      000000EDEDEDFFFFFFFFFFFF7B7B7B' ||
+                  '%light%5%      000000FFF2CCFFFFFFFFFFFFBF8F00' ||
+                  '%light%6%      000000DDEBF7FFFFFFFFFFFF2F75B5' ||
+                  '%light%7%      000000E2EFDAFFFFFFFFFFFF548235' ||
+                  '%light%8%      000000FFFFFFFFFFFF000000FFFFFF' ||
+                  '%light%9%      000000FFFFFFFFFFFF4472C4FFFFFF' ||
+                  '%medium%10%    000000F8CBADFCE4D6ED7D31FFFFFF' ||
+                  '%medium%11%    000000DBDBDBEDEDEDA5A5A5FFFFFF' ||
+                  '%medium%12%    000000FFE699FFF2CCFFC000FFFFFF' ||
+                  '%medium%13%    000000BDD7EEDDEBF75B9BD5FFFFFF' ||
+                  '%medium%14%    000000C6E0B4E2EFDA70AD47FFFFFF' ||
+                  '%medium%15%    000000D9D9D9FFFFFF000000FFFFFF' ||
+                  '%medium%16%    000000D9D9D9FFFFFF4472C4FFFFFF' ||
+                  '%medium%17%    000000D9D9D9FFFFFFED7D31FFFFFF' ||
+                  '%medium%18%    000000D9D9D9FFFFFFA5A5A5FFFFFF' ||
+                  '%medium%19%    000000D9D9D9FFFFFFFFC000FFFFFF' ||
+                  '%medium%20%    000000D9D9D9FFFFFF5B9BD5FFFFFF' ||
+                  '%medium%21%    000000D9D9D9FFFFFF70AD47FFFFFF' ||
+                  '%medium%22%    000000A6A6A6D9D9D9D9D9D9000000' ||
+                  '%medium%23%    000000B4C6E7D9E1F2D9E1F2000000' ||
+                  '%medium%24%    000000F8CBADFCE4D6FCE4D6000000' ||
+                  '%medium%25%    000000DBDBDBEDEDEDEDEDED000000' ||
+                  '%medium%26%    000000FFE699FFF2CCFFF2CC000000' ||
+                  '%medium%27%    000000BDD7EEDDEBF7DDEBF7000000' ||
+                  '%medium%28%    000000C6E0B4E2EFDAE2EFDA000000' ||
+                  '%medium%1%     000000D9D9D9FFFFFF000000FFFFFF' ||
+                  '%medium%2%     000000D9E1F2FFFFFF4472C4FFFFFF' ||
+                  '%medium%3%     000000FCE4D6FFFFFFED7D31FFFFFF' ||
+                  '%medium%4%     000000EDEDEDFFFFFFA5A5A5FFFFFF' ||
+                  '%medium%5%     000000FFF2CCFFFFFFFFC000FFFFFF' ||
+                  '%medium%6%     000000DDEBF7FFFFFF5B9BD5FFFFFF' ||
+                  '%medium%7%     000000E2EFDAFFFFFF70AD47FFFFFF' ||
+                  '%medium%8%     000000A6A6A6D9D9D9000000FFFFFF' ||
+                  '%medium%9%     000000B4C6E7D9E1F24472C4FFFFFF' ||
+                  '%dark%10%      000000DBDBDBEDEDEDFFC000FFFFFF' ||
+                  '%dark%11%      000000BDD7EEDDEBF770AD47FFFFFF' ||
+                  '%dark%1%       FFFFFF404040737373000000FFFFFF' ||
+                  '%dark%2%       FFFFFF3054964472C4000000FFFFFF' ||
+                  '%dark%3%       FFFFFFC65911ED7D31000000FFFFFF' ||
+                  '%dark%4%       FFFFFF7B7B7BA5A5A5000000FFFFFF' ||
+                  '%dark%5%       FFFFFFBF8F00FFC000000000FFFFFF' ||
+                  '%dark%6%       FFFFFF2F75B55B9BD5000000FFFFFF' ||
+                  '%dark%7%       FFFFFF54823570AD47000000FFFFFF' ||
+                  '%dark%8%       000000A6A6A6D9D9D9000000FFFFFF' ||
+                  '%dark%9%       000000B4C6E7D9E1F2ED7D31FFFFFF';
+      for i in 0 ..  length( l_styles ) / 45 - 1
+      loop
+        if lower( l_style ) like rtrim( substr( l_styles, i * 45 + 1, 15 ) )
+        then
+          l_header := true;
+          l_text_color := substr( l_styles, i * 45 + 16, 6 );
+          l_line_color := '';
+          l_odd_color  := substr( l_styles, i * 45 + 22, 6 );
+          l_even_color := substr( l_styles, i * 45 + 28, 6 );
+          l_header_col.text_color := substr( l_styles, i * 45 + 40, 6 );
+          l_header_col.fill_color := substr( l_styles, i * 45 + 34, 6 );
+          exit;
+        end if;
+      end loop;
+    end if;
+    --
     l_lw := coalesce( p_line_width
                     , jvs2n( p_options, 'lineWidth' )
                     , c_default_line_width
@@ -11961,13 +12144,13 @@ $END
     l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
     l_font := g_pdf.fonts( l_font_index );
     l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
-    l_header := coalesce( upper( xjv( p_options, 'header' ) ) = 'TRUE', false );
+    l_header := coalesce( upper( xjv( p_options, 'header' ) ) = 'TRUE', l_header, false );
     l_header_repeat := coalesce( upper( xjv( p_options, 'headerRepeat' ) ) = 'TRUE', true );
-    l_fill_color := xjv( p_options, 'fillColor' );
-    l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
-    l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
-    l_odd_color  := coalesce( p_odd_color, xjv( p_options, 'oddColor' ) );
-    l_even_color := coalesce( p_even_color, xjv( p_options, 'evenColor' ) );
+    l_fill_color := coalesce( xjv( p_options, 'fillColor' ), l_fill_color );
+    l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ), l_text_color );
+    l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ), l_line_color );
+    l_odd_color  := coalesce( p_odd_color, xjv( p_options, 'oddColor' ), l_odd_color );
+    l_even_color := coalesce( p_even_color, xjv( p_options, 'evenColor' ), l_even_color );
     get_padding( p_options, l_tp, l_bp, l_lp, l_rp );
     l_tp := coalesce( l_tp, 0 );
     l_bp := coalesce( l_bp, 0 );
@@ -11979,6 +12162,7 @@ $END
     l_line_sp := jvs2n( p_options, 'lineSpacing' );
     l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
     l_align := coalesce( xjv( p_options, 'align' ), xjv( p_options, 'alignment' ) );
+    l_hdr_align := coalesce( xjv( p_options, 'headerAlign' ), xjv( p_options, 'headerAlignment' ) );
     l_num_fmt := xjv( p_options, 'numberFormat' );
     l_date_fmt := xjv( p_options, 'dateFormat' );
     --
@@ -12030,8 +12214,8 @@ $END
       l_header_col.font_index := l_font_index;
     end if;
     l_header_col.font_size := coalesce( jvs2n( p_options, 'headerFontSize' ), l_fontsize );
-    l_header_col.text_color := coalesce( substr( xjv( p_options, 'headerTextColor' ), 1, 100 ), l_text_color );
-    l_header_col.fill_color := coalesce( substr( xjv( p_options, 'headerFillColor' ), 1, 100 ), l_fill_color );
+    l_header_col.text_color := coalesce( substr( xjv( p_options, 'headerTextColor' ), 1, 100 ), l_header_col.text_color, l_text_color );
+    l_header_col.fill_color := coalesce( substr( xjv( p_options, 'headerFillColor' ), 1, 100 ), l_header_col.fill_color, l_fill_color );
     l_header_col.line_spacing := jvs2n( p_options,  'headerLineSpacing' );
     l_header_col.line_spacing_f := jvs2n( p_options,  'headerLineSpacingFactor' );
     get_padding( p_options, l_header_col.top_padding, l_header_col.bottom_padding, l_header_col.left_padding, l_header_col.right_padding, null, 'header' );
@@ -12125,7 +12309,7 @@ $END
         ( l_start_x, l_y + l_max_top + 0.5 * l_lw
         , l_start_x + l_line_width, l_y + l_max_top - l_max_height - 0.5 * l_lw
         , l_widths
-        , coalesce( case when bitand( l_row_nr, 1 ) > 0 then l_odd_color else l_even_color end, l_fill_color )
+        , coalesce( case when bitand( l_row_nr + l_odd_even, 1 ) > 0 then l_odd_color else l_even_color end, l_fill_color )
         , l_line_color, l_lw
         );
       handle_columns( 3 ); -- write to pdf
