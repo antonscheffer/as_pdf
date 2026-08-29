@@ -9,6 +9,7 @@ is
 -- to do
 -- signature
 -- https://www.gemboxsoftware.com/pdf/examples/c-sharp-vb-net-pdf-advanced-electronic-signature-pades/1103#pades-b-b
+-- https://github.com/StefanBln/GenExPlus/tree/main/src/main/java/io/github/stefanbln/genexplus/report/signing
 -- acroforms
 -- https://github.com/phihag/pdfform.js/tree/master/test/data
 -- https://www.sejda.com/pdf-forms
@@ -18,6 +19,8 @@ is
 --https://learn.microsoft.com/en-us/windows/terminal/cascadia-code
 --https://simoncozens.github.io/fonts-and-layout//
 --https://support.creativemarket.com/hc/en-us/articles/360037478813-Using-Fonts-with-Special-Features-OpenType#msword
+-- accessible
+-- https://pdfa.org/techniques-for-accessible-pdf/
   --
   c_get_cp_page_width     constant pls_integer := 0;
   c_get_cp_page_height    constant pls_integer := 1;
@@ -43,6 +46,8 @@ is
   c_get_font_family       constant pls_integer := 32;
   c_get_font_win_ascent   constant pls_integer := 33;
   c_get_font_win_descent  constant pls_integer := 34;
+  c_get_font_strikeout    constant pls_integer := 35;
+  c_get_font_underline    constant pls_integer := 36;
   --
   type tp_numbers   is table of number;
   type tp_varchar2s is table of varchar2(32767);
@@ -168,6 +173,7 @@ is
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
     , p_align      varchar2    := null
+    , p_valign     varchar2    := null
     , p_line_width number      := null
     , p_url        varchar2    := null
     , p_options    varchar2 character set any_cs := null
@@ -184,6 +190,7 @@ is
     , p_fontsize   number      := null
     , p_min_height number      := null
     , p_align      varchar2    := null
+    , p_valign     varchar2    := null
     , p_txt_color  varchar2    := null
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
@@ -359,6 +366,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -369,6 +377,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -379,6 +388,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -393,6 +403,7 @@ is
     , p_radius      number      := null
     , p_transparant boolean     := null
     , p_alpha       number      := null
+    , p_dash        varchar2    := null
     , p_page_proc   pls_integer := null
     );
   --
@@ -401,6 +412,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -416,6 +428,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -429,6 +442,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -442,6 +456,7 @@ is
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     );
   --
@@ -454,6 +469,7 @@ is
     , p_line_width  number      := null
     , p_transparant boolean     := false
     , p_alpha       number      := null
+    , p_dash        varchar2    := null
     , p_page_proc   pls_integer := null
     );
   --
@@ -468,6 +484,7 @@ is
     , p_degrees_rotation number      := null
     , p_transparant      boolean     := false
     , p_alpha            number      := null
+    , p_dash             varchar2    := null
     , p_page_proc        pls_integer := null
     );
   --
@@ -589,7 +606,7 @@ create or replace package body as_pdf
 is
 -- https://github.com/pdfcpu/pdfcpu
 -- https://github.com/n8willis/opentype-shaping-documents
-  c_version            constant varchar2(10) := '0.4.0.3';
+  c_version            constant varchar2(10) := '0.4.0.4';
   c_db_charset         constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
   c_db_ncharset        constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
   c_producer           constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
@@ -1541,7 +1558,7 @@ $END
   return number
   is
     c_inch  constant number := 25.40025;
-    c_px2mm constant number := round( c_inch / g_pdf.dpi, 3 ); -- default 72 DPI    
+    c_px2mm constant number := round( c_inch / g_pdf.dpi, 3 ); -- default 72 DPI
   begin
     return round( case coalesce( lower( p_unit ), 'cm' )
                     when 'mm'    then p_value * 72 / c_inch
@@ -1555,7 +1572,7 @@ $END
                     when 'pc'    then p_value * 12  -- also pica
                     when 'px'    then p_value * c_px2mm * 72 / c_inch -- Jasper Reports seems to use the DPI -> mm -> inch route
                     when 'pixel' then p_value * c_px2mm * 72 / c_inch -- Jasper Reports seems to use the DPI -> mm -> inch route
-                    when 'uu'    then p_value       -- user unit 
+                    when 'uu'    then p_value       -- user unit
                     else null
                   end
                 , 3
@@ -2225,7 +2242,7 @@ $END
       font2page( p_font_index, p_fontsize );
     elsif p_font_index is null
     then
-      font2page( g_pdf.current_font, coalesce( g_pdf.fonts( g_pdf.current_font ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize ) ); 
+      font2page( g_pdf.current_font, coalesce( g_pdf.fonts( g_pdf.current_font ).fontsize, g_pdf.pages( g_pdf.current_page ).fontsize, c_default_fontsize ) );
     end if;
   end font2page_i;
   --
@@ -4689,7 +4706,7 @@ end' ) );   -- self + 4
             exit;
           end if;
         end loop;
-      end if;   
+      end if;
       l_parent( i ) := l_cur_parent;
       l_last( l_cur_parent ) := i;
       l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + 1;
@@ -4698,7 +4715,7 @@ end' ) );   -- self + 4
     loop
       if l_cnt.exists( i )
       then
-        l_cur_parent := l_parent( i ); 
+        l_cur_parent := l_parent( i );
          l_cnt( l_cur_parent ) := l_cnt( l_cur_parent ) + l_cnt( i );
       end if;
     end loop;
@@ -4973,6 +4990,7 @@ $END
                   , l_page_proc.nums( 4 )
                   , l_page_proc.chars( 1 )
                   , l_page_proc.nums( 5 )
+                  , l_page_proc.chars( 2 )
                   );
             when 2
             then
@@ -5002,6 +5020,7 @@ $END
                     , l_page_proc.nums( 1 )
                     , l_page_proc.chars( 1 )
                     , l_page_proc.nums( 2 )
+                    , l_page_proc.chars( 2 )
                     );
               end;
             when 4
@@ -5017,6 +5036,7 @@ $END
                     , l_page_proc.nums( 9 )
                     , l_page_proc.chars( 1 )
                     , l_page_proc.nums( 10 )
+                    , l_page_proc.chars( 2 )
                     );
             when 5
             then
@@ -5029,6 +5049,7 @@ $END
                       , l_page_proc.nums( 7 )
                       , l_page_proc.chars( 1 )
                       , l_page_proc.nums( 8 )
+                      , l_page_proc.chars( 2 )
                       );
             when 6
             then
@@ -5041,6 +5062,7 @@ $END
                       , l_page_proc.nums( 7 )
                       , l_page_proc.chars( 1 )
                       , l_page_proc.nums( 8 )
+                      , l_page_proc.chars( 2 )
                       );
             when 8
             then
@@ -5054,6 +5076,7 @@ $END
                     , l_page_proc.nums( 6 )
                     , l_page_proc.nums( 7 ) = 1
                     , l_page_proc.nums( 8 )
+                    , l_page_proc.chars( 3 )
                     );
             when 9
             then
@@ -5104,6 +5127,7 @@ $END
                         , l_page_proc.chars( 2 )
                         , l_page_proc.chars( 3 )
                         , l_page_proc.chars( 4 )
+                        , l_page_proc.chars( 8 )
                         , l_page_proc.nums( 7 )
                         , l_page_proc.chars( 6 )
                         , l_page_proc.chars( 7 )
@@ -5200,10 +5224,26 @@ $END
   procedure graphics_init_and_set_line
     ( p_line_width number
     , p_line_color varchar2
+    , p_dash       varchar2
     )
   is
+    l_dash varchar2(1024);
   begin
     txt2page( 'q ' || to_char_round( coalesce( case when p_line_width != 0 then p_line_width end, c_default_line_width ), 5 ) || ' w' );
+    if substr( lower( p_dash ), 1, 3 ) = 'dot'
+    then
+      l_dash := '[1 2] 0';
+    elsif substr( lower( p_dash ), 1, 4 ) = 'dash'
+    then
+      l_dash := '[4 4] 0';
+    elsif p_dash is not null and ltrim( p_dash, ' 0123456789[]' ) is null
+    then
+      l_dash := ltrim( rtrim( p_dash ) );
+    end if;
+    if l_dash is not null
+    then
+      txt2page( l_dash || ' d 1 g' );
+    end if;
     if p_line_color is not null
     then
       txt2page( rgb( p_color => p_line_color ) || 'RG' );
@@ -5217,10 +5257,26 @@ $END
     ( p_line_width number
     , p_fill_color varchar2
     , p_line_color varchar2
+    , p_dash       varchar2
     )
   is
+    l_dash varchar2(1024);
   begin
     txt2page( 'q ' || to_char_round( coalesce( case when p_line_width != 0 then p_line_width end, c_default_line_width ), 5 ) || ' w' );
+    if substr( lower( p_dash ), 1, 3 ) = 'dot'
+    then
+      l_dash := '[1 2] 0';
+    elsif substr( lower( p_dash ), 1, 4 ) = 'dash'
+    then
+      l_dash := '[4 4] 0';
+    elsif p_dash is not null and ltrim( p_dash, ' 0123456789[]' ) is null
+    then
+      l_dash := ltrim( rtrim( p_dash ) );
+    end if;
+    if l_dash is not null
+    then
+      txt2page( l_dash || ' d 1 g' );
+    end if;
     if p_line_color is not null
     then
       txt2page( rgb( p_color => p_line_color ) || 'RG' );
@@ -5287,24 +5343,25 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
     if p_page_proc is null
     then
-      graphics_init_and_set_line( p_line_width, p_line_color );
+      graphics_init_and_set_line( p_line_width, p_line_color, p_dash );
       add_alpha( p_alpha );
       txt2page(  to_char_round( p_x1, 5 ) || ' '
               || to_char_round( p_y1, 5 ) || ' m '
               || to_char_round( p_x2, 5 ) || ' '
-              || to_char_round( p_y2, 5 ) || ' l b'
+              || to_char_round( p_y2, 5 ) || ' l S'
               || ' Q'
               );
     else
       add_page_proc( 1, p_page_proc
                    , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_line_width, p_alpha )
-                   , p_chars => tp_varchar2s( p_line_color )
+                   , p_chars => tp_varchar2s( p_line_color, p_dash )
                    );
     end if;
   end line;
@@ -5316,11 +5373,12 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
-    line( p_x, p_y, p_x + p_width, p_y, p_line_width, p_line_color, p_page_proc );
+    line( p_x, p_y, p_x + p_width, p_y, p_line_width, p_line_color, p_alpha, p_dash, p_page_proc );
   end horizontal_line;
   --
   procedure vertical_line
@@ -5330,11 +5388,12 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
-    line( p_x, p_y, p_x, p_y + p_height, p_line_width, p_line_color, p_page_proc );
+    line( p_x, p_y, p_x, p_y + p_height, p_line_width, p_line_color, p_alpha, p_dash, p_page_proc );
   end vertical_line;
   --
   procedure rect
@@ -5348,6 +5407,7 @@ $END
     , p_radius      number      := null
     , p_transparant boolean     := null
     , p_alpha       number      := null
+    , p_dash        varchar2    := null
     , p_page_proc   pls_integer := null
     )
   is
@@ -5355,9 +5415,9 @@ $END
     l_b      number;
     l_radius number;
   begin
-    if p_page_proc is null
+    if p_page_proc is null and p_width >= 0 and p_height >= 0
     then
-      graphics_init_and_fill( p_line_width, p_fill_color, p_line_color );
+      graphics_init_and_fill( p_line_width, p_fill_color, p_line_color, p_dash );
       add_alpha( p_alpha );
       if p_radius > 0
       then
@@ -5389,11 +5449,26 @@ $END
                 );
       end if;
       graphics_close( p_transparant );
-    else
+    elsif p_page_proc is not null
+    then
       add_page_proc( 2, p_page_proc
                    , p_nums  => tp_numbers( p_x, p_y, p_width, p_height, p_line_width, p_radius, case when p_transparant then 1 else 0 end, p_alpha )
-                   , p_chars => tp_varchar2s( p_fill_color, p_line_color )
+                   , p_chars => tp_varchar2s( p_fill_color, p_line_color, p_dash )
                    );
+    else
+      rect
+        ( p_x           => case when p_width  < 0 then p_x + p_width  else p_x end
+        , p_y           => case when p_height < 0 then p_y + p_height else p_y end
+        , p_width       => abs( p_width )
+        , p_height      => abs( p_height )
+        , p_line_color  => p_line_color
+        , p_fill_color  => p_fill_color
+        , p_line_width  => p_line_width
+        , p_radius      => p_radius
+        , p_transparant => p_transparant
+        , p_alpha       => p_alpha
+        , p_dash        => p_dash
+        );
     end if;
   end rect;
   --
@@ -5402,6 +5477,7 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
@@ -5417,7 +5493,7 @@ $END
     end if;
     if p_page_proc is null
     then
-      graphics_init_and_set_line( p_line_width, p_line_color );
+      graphics_init_and_set_line( p_line_width, p_line_color, p_dash );
       add_alpha( p_alpha );
       l_first := p_steps.first;
       l_path :=   to_char_round( p_steps( l_first ), 5 )     || ' '
@@ -5439,7 +5515,7 @@ $END
       end loop;
       add_page_proc( 3, p_page_proc
                    , p_nums  => l_nums
-                   , p_chars => tp_varchar2s( p_line_color )
+                   , p_chars => tp_varchar2s( p_line_color, p_dash )
                    );
     end if;
   end path;
@@ -5456,13 +5532,14 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
     if p_page_proc is null
     then
-      graphics_init_and_set_line( p_line_width, p_line_color );
+      graphics_init_and_set_line( p_line_width, p_line_color, p_dash );
       add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
@@ -5474,7 +5551,7 @@ $END
     else
       add_page_proc( 4, p_page_proc
                    , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_x4, p_y4, p_line_width, p_alpha )
-                   , p_chars => tp_varchar2s( p_line_color )
+                   , p_chars => tp_varchar2s( p_line_color, p_dash )
                    );
     end if;
   end bezier;
@@ -5489,13 +5566,14 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
     if p_page_proc is null
     then
-      graphics_init_and_set_line( p_line_width, p_line_color );
+      graphics_init_and_set_line( p_line_width, p_line_color, p_dash );
       add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
@@ -5506,7 +5584,7 @@ $END
     else
       add_page_proc( 5, p_page_proc
                    , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width, p_alpha )
-                   , p_chars => tp_varchar2s( p_line_color )
+                   , p_chars => tp_varchar2s( p_line_color, p_dash )
                    );
     end if;
   end bezier_v;
@@ -5521,13 +5599,14 @@ $END
     , p_line_width number      := null
     , p_line_color varchar2    := null
     , p_alpha      number      := null
+    , p_dash       varchar2    := null
     , p_page_proc  pls_integer := null
     )
   is
   begin
     if p_page_proc is null
     then
-      graphics_init_and_set_line( p_line_width, p_line_color );
+      graphics_init_and_set_line( p_line_width, p_line_color, p_dash );
       add_alpha( p_alpha );
       txt2page( to_char_round( p_x1, 5 ) || ' ' || to_char_round( p_y1, 5 )
               || ' m '
@@ -5538,7 +5617,7 @@ $END
     else
       add_page_proc( 6, p_page_proc
                    , p_nums  => tp_numbers( p_x1, p_y1, p_x2, p_y2, p_x3, p_y3, p_line_width, p_alpha )
-                   , p_chars => tp_varchar2s( p_line_color )
+                   , p_chars => tp_varchar2s( p_line_color, p_dash )
                    );
     end if;
   end bezier_y;
@@ -5552,6 +5631,7 @@ $END
     , p_line_width  number   := null
     , p_transparant boolean     := false
     , p_alpha       number      := null
+    , p_dash        varchar2    := null
     , p_page_proc   pls_integer := null
     )
   is
@@ -5565,6 +5645,7 @@ $END
           , p_line_width   => p_line_width
           , p_transparant  => p_transparant
           , p_alpha        => p_alpha
+          , p_dash         => p_dash
           , p_page_proc    => p_page_proc
           );
   end circle;
@@ -5580,6 +5661,7 @@ $END
     , p_degrees_rotation number      := null
     , p_transparant      boolean     := false
     , p_alpha            number      := null
+    , p_dash             varchar2    := null
     , p_page_proc        pls_integer := null
     )
   is
@@ -5594,7 +5676,7 @@ $END
   begin
     if p_page_proc is null
     then
-      graphics_init_and_fill( p_line_width, p_fill_color, p_line_color );
+      graphics_init_and_fill( p_line_width, p_fill_color, p_line_color, p_dash );
       add_alpha( p_alpha );
       if coalesce( p_degrees_rotation, 0 ) != 0
       then
@@ -5773,7 +5855,12 @@ $END
               )
   return number
   is
+    l_font tp_font;
   begin
+    if p_what in ( c_get_font_strikeout, c_get_font_underline )
+    then
+      l_font := g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) );
+    end if;
     return
       case p_what
         when c_get_cp_page_width     then g_pdf.pages( g_pdf.current_page ).settings.page_width
@@ -5797,6 +5884,8 @@ $END
         when c_get_current_page      then g_pdf.current_page
         when c_get_font_win_ascent   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_ascent
         when c_get_font_win_descent  then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_descent
+        when c_get_font_strikeout    then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) / 1000
+        when c_get_font_underline    then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) / 1000
       end;
   end get;
   --
@@ -5829,14 +5918,13 @@ $END
   begin
     l_fontname := lower( p_fontname );
     l_family   := lower( p_family );
-    l_style := upper( substr( p_style, 1, 1 ) );
-    l_style := case l_style
+    l_style := case upper( substr( ltrim( p_style ), 1, 1 ) )
                  when 'N' then 'N' -- Normal
                  when 'R' then 'N' -- Regular
                  when 'B' then 'B' -- Bold
                  when 'I' then 'I' -- Italic
                  when 'O' then 'I' -- Oblique
-                 else null
+                 else 'BI'
                end;
     l_index := g_pdf.fonts.first;
     loop
@@ -7809,7 +7897,7 @@ $END
       l_buf    varchar2(32767);
       l_rv     tp_pls_tab;
     begin
-      -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#classDefTbl
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#classDefTbl
       l_buf := dbms_lob.substr( p_font, 6, p_offs );
       if substr( l_buf, 1, 4 ) = '0001'
       then
@@ -8079,7 +8167,7 @@ $END
             if 2 + l_to_do + 2 * l_tmp > l_sz
             then
               l_buf := l_buf || dbms_lob.substr( p_font, 2 * ( 2 + l_to_do + 2 * l_tmp - l_sz ), p_offs + 2 * l_sz );
-            end if; 
+            end if;
             l_subtable.matrix( l_glyph )( l_bias + 20 ) := l_to_do;
             for i in 0 .. l_to_do - 1
             loop
@@ -8155,7 +8243,7 @@ $END
                 l_subtable.matrix( l_glyph )( 0 ) := 0;
               end if;
             end loop;
-          else      
+          else
 -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-3-coverage-based-glyph-contexts
             l_to_do := uint16( substr( l_buf, 5, 4 ) );
             l_seq_lu_cnt := uint16( substr( l_buf, 9, 4 ) );
@@ -8327,7 +8415,7 @@ $END
             end loop;
           elsif substr( l_buf, 1, 4 ) = '0003'
           then
--- -- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt3
+-- https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chseqctxt3
             l_offs := 2;
             l_sz := 8100;
             l_done := l_sz;
@@ -8426,19 +8514,19 @@ $END
             l_glyph := l_bt_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 1 ) := l_bt_class( l_glyph );            
+              l_subtable.matrix( - l_glyph )( 1 ) := l_bt_class( l_glyph );
               l_glyph := l_bt_class.next( l_glyph );
             end loop;
             l_glyph := l_lah_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 3 ) := l_lah_class( l_glyph );            
+              l_subtable.matrix( - l_glyph )( 3 ) := l_lah_class( l_glyph );
               l_glyph := l_lah_class.next( l_glyph );
             end loop;
             l_glyph := l_inp_class.first;
             while l_glyph is not null
             loop
-              l_subtable.matrix( - l_glyph )( 2 ) := l_inp_class( l_glyph );            
+              l_subtable.matrix( - l_glyph )( 2 ) := l_inp_class( l_glyph );
               l_glyph := l_inp_class.next( l_glyph );
             end loop;
             for i in 0 .. l_coverage.count - 1
@@ -8458,7 +8546,7 @@ $END
                 parse_chained_seq_rule_set( p_offs + l_offs );
               else
                 l_subtable.matrix( l_glyph )( 0 ) := 0;
-              end if;              
+              end if;
             end loop;
           end if;
           l_lookup.subtables( p_idx ) := l_subtable;
@@ -8518,7 +8606,7 @@ $END
               when 5 then parse_lookup_type5( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 6 then parse_lookup_type6( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 7 then parse_lookup_type7( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
-else null;--dbms_output.put_line( 'not parsed GSUB lookup type ' || l_lookup.lookup_type );
+else null;
             end case;
             l_done := l_done + 1;
           end loop;
@@ -9076,7 +9164,7 @@ else null;--dbms_output.put_line( 'not parsed GSUB lookup type ' || l_lookup.loo
               when 6 then parse_lookup_mark_to( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 8 then parse_lookup_type8( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
               when 9 then parse_lookup_type9( i, p_offs + uint16( substr( l_buf, 1 + 4 * l_done, 4 ) ) );
-else null;--dbms_output.put_line( 'not parsed GPOS lookup type ' || l_lookup.lookup_type );
+else null;
             end case;
             l_done := l_done + 1;
           end loop;
@@ -10548,7 +10636,7 @@ end if;
       l_shape_run( i ) := l_shape;
     end loop;
     --
-    if p_apply and g_pdf.gsub_gpos.exists( - p_font_index ) 
+    if p_apply and g_pdf.gsub_gpos.exists( - p_font_index )
     then
       l_features := ordered_features( g_pdf.gsub_gpos( - p_font_index ), p_script, p_lang_sys, p_features, null );
       for f in 0 .. l_features.count - 1
@@ -10984,7 +11072,6 @@ end if;
     , p_apply_gsub  boolean     := false
     , p_apply_gpos  boolean     := false
     , p_rtl         boolean     := false
-
     )
   is
     l_len    number;
@@ -11213,6 +11300,68 @@ end if;
     return ( 0.5 * p_font.linegap + abs( p_font.descent ) ) * p_size / 1000;
   end get_font_bottom;
   --
+  function str_lines
+    ( p_txt        varchar2 character set any_cs
+    , p_width      number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    )
+  return pls_integer
+  is
+    l_x          number;
+    l_y          number;
+    l_fontsize   number;
+    l_lines      pls_integer;
+    l_font_index pls_integer;
+    l_page_break boolean;
+  begin
+    if p_txt is null
+    then
+      return null;
+    end if;
+    l_font_index := gfi( p_font_index );
+    l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize );
+    wti( p_txt          => replace( p_txt, chr(9), c_tab_spaces )
+       , p_x            => 0
+       , p_y            => null
+       , p_xmin         => 0
+       , p_xmax         => p_width
+       , p_ymin         => null
+       , p_ymax         => null
+       , p_font_index   => l_font_index
+       , p_fontsize     => l_fontsize
+       , p_line_spacing => null
+       , p_color        => null
+       , p_align        => null
+       , p_dry_run      => true
+       , p_new_x        => l_x
+       , p_new_y        => l_y
+       , p_lines        => l_lines
+       , p_page_break   => l_page_break
+       );
+    return l_lines;
+  end str_lines;
+  --
+  function str_height
+    ( p_txt        varchar2 character set any_cs
+    , p_width      number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    )
+  return number
+  is
+    l_fontsize   number;
+    l_font       tp_font;
+    l_lines      pls_integer;
+    l_font_index pls_integer;
+  begin
+    l_font_index := gfi( p_font_index );
+    l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize );
+    l_lines := str_lines( p_txt, p_width, l_font_index, l_fontsize );
+    l_font := g_pdf.fonts( l_font_index );
+    return get_font_top( l_font, l_fontsize ) + get_font_bottom( l_font, l_fontsize ) + l_fontsize * g_pdf.line_spacing_factor * ( coalesce( l_lines, 1 ) - 1 );
+  end str_height;
+  --
   procedure handle_widths
     ( p_widths   tp_numbers
     , p_cnt      pls_integer
@@ -11338,6 +11487,7 @@ end if;
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
     , p_align      varchar2    := null
+    , p_valign     varchar2    := null
     , p_line_width number      := null
     , p_url        varchar2    := null
     , p_options    varchar2 character set any_cs := null
@@ -11345,19 +11495,22 @@ end if;
     )
   is
     l_x          number;
-  --  l_y          number;
+    l_y          number;
     l_lw         number;
+    l_by         number;
     l_bp         number;
     l_lp         number;
     l_rp         number;
     l_tp         number;
     l_mt         number;
+    l_mb         number;
     l_mh         number;
     l_width      number;
     l_tmp_x      number;
     l_tmp_y      number;
     l_fontsize   number;
     l_line_sp    number;
+    l_txt_height number;
     l_lines      pls_integer;
     l_font_index pls_integer;
     l_text_color varchar2(32767);
@@ -11375,12 +11528,14 @@ end if;
       then
         font2page_i( l_font_index, l_fontsize );
       end if;
+      l_lines := null;
       wti( replace( p_txt, chr(9), c_tab_spaces )
-         , l_x + l_lp + 0.5 * l_lw, p_y - l_mt - 0.5 * l_lw - l_tp
+         , l_x + l_lp + 0.5 * l_lw, l_y
          , l_x + l_lp + 0.5 * l_lw, l_x + l_width - l_rp - 0.5 * l_lw
          , null, null
          , l_font_index, l_fontsize, l_line_sp
-         , l_text_color, p_align
+         , l_text_color
+         , case when not p_dry_run then coalesce( p_align, xjv( p_options, 'align' ), xjv( p_options, 'alignment' ) ) end
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
          , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
          );
@@ -11413,28 +11568,44 @@ end if;
       l_lp := coalesce( l_lp, 2 );
       l_rp := coalesce( l_rp, 2 );
       l_mt := get_font_top( l_font, l_fontsize );
-      l_mh := coalesce( jvs2n( p_options, 'minimalHeight' ), 0 );
-      l_mh := greatest( l_mh, get_font_bottom( l_font, l_fontsize ) + l_mt );
+      l_mb := get_font_bottom( l_font, l_fontsize );
       l_line_sp := coalesce( jvs2n( p_options, 'lineSpacing' )
                            , l_fontsize * coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor )
                            );
       --
       l_x := coalesce( p_x, l_settings.margin_left );
+      l_y := p_y - 0.5 * l_lw - l_tp - l_mt;
       l_width := coalesce( p_width, jvs2n( p_options, 'width' )
                          , least( str_len( p_txt, l_font_index, l_fontsize ) + l_lp + l_rp, l_settings.page_width - l_settings.margin_right - l_x )
                          );
       l_widths( 1 ) := l_width;
       --
       wt( true );
-      l_mh := greatest( coalesce( p_height, jvs2n( p_options, 'height' ), 0 ), l_mh + l_line_sp * ( coalesce( l_lines, 1 ) - 1 ) );
+      l_txt_height := l_mb + l_mt + l_line_sp * ( coalesce( l_lines, 1 ) - 1 );
+      l_mh := greatest( coalesce( p_height, jvs2n( p_options, 'height' ), 0 ), l_txt_height + l_tp + l_bp + l_lw );
+      l_by := p_y - l_mh;
       fill_with_borders
         ( l_x, p_y
-        , l_x + l_width, p_y - l_mh - l_lw - l_bp - l_tp
+        , l_x + l_width, l_by
         , l_widths, l_fill_color, l_line_color, l_lw
         );
+      --
+      case upper( substr( to_char( coalesce( p_valign, xjv( p_options, 'vAlign' ), xjv( p_options, 'verticalAlignment' ) ) ), 1, 1 ) )
+        when 'B' then
+          l_y := l_by + l_txt_height + 0.5 * l_lw + l_bp - l_mt;
+        when 'M' then
+          l_y := p_y - 0.5 * ( l_mh - l_txt_height ) - l_mt;
+        when 'J' then
+          if l_txt_height + l_tp + l_bp + l_lw != l_mh and l_lines > 1
+          then
+            l_line_sp := ( l_mh - l_mb - l_mt - l_tp - l_bp ) / ( l_lines - 1 );
+          end if;
+        else
+          null;
+      end case;
       wt( false );
       g_pdf.x := l_x + l_width;
-      g_pdf.y := p_y - l_mh - l_lw - l_bp - l_tp;
+      g_pdf.y := l_by;
       if p_url is not null
       then
         annot( p_subtype    => 'Link'
@@ -11450,7 +11621,7 @@ end if;
     else
       add_page_proc( 11, p_page_proc
                    , p_nums  => tp_numbers( p_x, p_y, p_width, p_padding, p_font_index, p_fontsize, p_line_width )
-                   , p_chars => tp_varchar2s( p_txt_color, p_fill_color, p_line_color, p_align, p_txt, p_url, p_options )
+                   , p_chars => tp_varchar2s( p_txt_color, p_fill_color, p_line_color, p_align, p_txt, p_url, p_options, p_valign )
                    , p_nchar => case when isnchar( p_txt ) then p_txt end
                    );
     end if;
@@ -11469,6 +11640,7 @@ end if;
     , p_fontsize   number      := null
     , p_min_height number      := null
     , p_align      varchar2    := null
+    , p_valign     varchar2    := null
     , p_txt_color  varchar2    := null
     , p_fill_color varchar2    := null
     , p_line_color varchar2    := null
@@ -11484,15 +11656,19 @@ end if;
     l_tp         number;
     l_mt         number;
     l_mh         number;
+    l_mtp        number;
+    l_mbp        number;
     l_tmp        number;
     l_tmp_x      number;
     l_tmp_y      number;
-    l_min_height number;
     l_fontsize   number;
     l_col_fs     number;
     l_line_sp    number;
     l_line_spf   number;
     l_row_width  number;
+    l_by         number;
+    l_fnt_top    number;
+    l_fnt_bottom number;
     l_y_offset   number;
     l_cnt        pls_integer;
     l_lines      pls_integer;
@@ -11500,6 +11676,8 @@ end if;
     l_font_index pls_integer;
     l_pb         boolean;
     l_col_path   varchar2(100);
+    l_align      varchar2(32767);
+    l_valign     varchar2(32767);
     l_text_color varchar2(32767);
     l_fill_color varchar2(32767);
     l_line_color varchar2(32767);
@@ -11507,13 +11685,21 @@ end if;
     l_col_font   tp_font;
     l_fi         tp_pls_tab;
     l_fs         tp_num_tab;
+    l_cy         tp_num_tab;
     l_cls        tp_num_tab;
     l_cbp        tp_num_tab;
     l_clp        tp_num_tab;
     l_crp        tp_num_tab;
     l_ctp        tp_num_tab;
     l_widths     tp_num_tab;
+    l_c_lines    tp_num_tab;
+    l_c_top      tp_num_tab;
+    l_c_bottom   tp_num_tab;
+    l_c_txt_h    tp_num_tab;
     l_settings   tp_settings;
+    type tp_align is table of varchar2(256) index by pls_integer;
+    l_caln       tp_align;
+    l_cvaln      tp_align;
     --
     procedure wt( p_idx pls_integer, p_dry_run boolean )
     is
@@ -11522,12 +11708,14 @@ end if;
       then
         font2page_i( l_fi( p_idx ), l_fs( p_idx ) );
       end if;
+      l_lines := null;
       wti( replace( p_txt( p_idx ), chr(9), c_tab_spaces )
-         , l_x + l_clp( p_idx ) + 0.5 * l_lw, p_y - l_y_offset
+         , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_cy( p_idx )
          , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
          , null, null
          , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx )
-         , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end, p_align
+         , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end
+         , case when not p_dry_run then l_caln( p_idx ) end
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
          , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
          );
@@ -11553,29 +11741,27 @@ end if;
     l_fill_color := xjv( p_options, 'fillColor' );
     l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
     l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
+    l_align := coalesce( p_align, xjv( p_options, 'align' ), xjv( p_options, 'alignment' ) );
+    l_valign := coalesce( p_valign, xjv( p_options, 'vAlign' ), xjv( p_options, 'verticalAlignment' ) );
     get_padding( p_options, l_tp, l_bp, l_lp, l_rp, p_padding => p_padding );
     l_tp := coalesce( l_tp, 0 );
     l_bp := coalesce( l_bp, 0 );
     l_lp := coalesce( l_lp, 2 );
     l_rp := coalesce( l_rp, 2 );
-    l_min_height := coalesce( jvs2n( p_options, 'minimalHeight' ), 0 );
-    l_min_height := greatest( l_min_height, l_bp + get_font_bottom( l_font, l_fontsize ) + get_font_top( l_font, l_fontsize ) + l_tp );
+    l_mh := coalesce( p_min_height, jvs2n( p_options, 'height' ), jvs2n( p_options, 'minimalHeight' ), 0 );
     l_line_sp := jvs2n( p_options, 'lineSpacing' );
     l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
     --
     l_x := coalesce( p_x, l_settings.margin_left );
     handle_widths( p_widths, l_cnt, l_x, l_settings, p_options, l_widths );
-    l_row_width := 0;
-    for i in 1 .. l_cnt
-    loop
-      l_row_width := l_row_width + l_widths( i );
-    end loop;
-    --
     l_mt := 0;
-    l_mh := l_min_height;
-    l_y_offset := 0;
+    l_mtp := 0;
+    l_mbp := 0;
+    l_row_width := 0;
+    --
     for c in 1 .. l_cnt
     loop
+      l_row_width := l_row_width + l_widths( c );
       l_col_path := 'columns[' || to_char( c - 1 ) || '].';
       l_col_fs := jvs2n( p_options, l_col_path || 'fontSize' );
       l_col_fi := jvs2n( p_options, l_col_path || 'fontIndex' );
@@ -11600,22 +11786,51 @@ end if;
                             , l_col_fs * l_line_spf
                             );
       --
+      l_cy( c ) := p_y;
+      l_caln( c ) := coalesce( xjv( p_options, l_col_path || 'align' ), xjv( p_options, l_col_path || 'alignment' ), l_align );
+      l_cvaln( c ) := coalesce( xjv( p_options, l_col_path || 'vAlign' ), xjv( p_options, l_col_path || 'verticalAlignment' ), l_valign );
       l_col_font := g_pdf.fonts( l_col_fi );
-      l_tmp := get_font_top( l_col_font, l_col_fs ) + l_ctp( c );
-      l_mt := greatest( l_mt, l_tmp );
-      l_tmp := l_tmp + get_font_bottom( l_col_font, l_col_fs ) + l_cbp( c );
+      l_fnt_top    := get_font_top( l_col_font, l_col_fs );
+      l_fnt_bottom := get_font_bottom( l_col_font, l_col_fs );
+      l_mt := greatest( l_mt, l_fnt_top );
+      l_mtp := greatest( l_mtp, l_ctp( c ) + l_fnt_top );
+      l_mbp := greatest( l_mbp, l_cbp( c ) + l_fnt_bottom );
       wt( c, true );
-      l_mh := greatest( l_mh, l_tmp + l_cls( c ) * ( coalesce( l_lines, 1 ) - 1 ) );
+      l_c_top( c )  := l_fnt_top;
+      l_c_bottom( c ) := l_fnt_bottom;
+      l_c_lines( c ) := coalesce( l_lines, 1 );
+      l_tmp := l_fnt_top + l_fnt_bottom + l_cls( c ) * ( coalesce( l_lines, 1 ) - 1 );
+      l_c_txt_h( c ) := l_tmp;
+      l_mh := greatest( l_mh, l_tmp + l_ctp( c ) + l_cbp( c ) + l_lw );
     end loop;
     --
+    l_y_offset := 0;
     if lower( xjv( p_options, 'yOffset' ) ) = 'true'
     then
-      l_y_offset := l_mt + 0.5 * l_lw;
+      l_y_offset := l_mtp + 0.5 * l_lw;
     end if;
+    l_by := p_y + l_mtp + 0.5 * l_lw - l_y_offset - l_mh;
+    for c in 1 .. l_cnt
+    loop
+      case upper( substr( l_cvaln( c ), 1, 1 ) )
+        when 'B' then
+          l_cy( c ) := l_by + l_c_txt_h( c ) + l_cbp( c ) + 0.5 * l_lw - l_c_top( c );
+        when 'M' then
+          l_cy( c ) := l_cy( c ) - 0.5 * ( l_mh - l_c_txt_h( c ) ) + l_c_top( c ) - l_y_offset;
+        when 'J' then
+          l_cy( c ) := l_cy( c ) - l_y_offset + l_mtp - l_c_top( c ) - l_ctp( c );
+          if l_c_txt_h( c ) + l_ctp( c ) + l_cbp( c ) + l_lw != l_mh and l_c_lines( c )  > 1
+          then
+            l_cls( c ) := ( l_mh - l_c_top( c ) - l_ctp( c ) - l_c_bottom( c ) - l_cbp( c ) - l_lw ) / ( l_c_lines( c )  - 1 );
+          end if;
+        else
+          l_cy( c ) := l_cy( c ) - l_y_offset + l_mtp - l_c_top( c ) - l_ctp( c );
+      end case;
+    end loop;
     --
     fill_with_borders
-      ( l_x, p_y + l_mt + 0.5 * l_lw - l_y_offset
-      , l_x + l_row_width, p_y + l_mt - l_mh - 0.5 * l_lw - l_y_offset
+      ( l_x, p_y + l_mtp + 0.5 * l_lw - l_y_offset
+      , l_x + l_row_width, l_by
       , l_widths, l_fill_color, l_line_color, l_lw
       );
     --
@@ -11624,6 +11839,9 @@ end if;
       wt( c, false );
       l_x := l_x + l_widths( c );
     end loop;
+    --
+    g_pdf.x := l_x + l_row_width;
+    g_pdf.y := l_by;
   end table_row;
   --
   procedure c2t
@@ -11688,7 +11906,7 @@ end if;
     l_even_color    varchar2(32767);
     l_options       varchar2(32767);
     l_outline       varchar2(32767);
-    l_outline_part  varchar2(32767); 
+    l_outline_part  varchar2(32767);
     l_styles        varchar2(32767);
     l_script        varchar2(10);
     l_lang_sys      varchar2(10);
@@ -11769,6 +11987,7 @@ end if;
         then
           font2page_i( l_header_cols( p_idx ).font_index, l_header_cols( p_idx ).font_size );
         end if;
+        l_lines := null;
         wti( replace( l_txt, chr(9), c_tab_spaces )
            , l_x + l_header_cols( p_idx ).left_padding + 0.5 * l_lw, l_y
            , l_x + l_header_cols( p_idx ).left_padding + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_header_cols( p_idx ).right_padding - 0.5 * l_lw
@@ -11821,6 +12040,7 @@ end if;
     is
       l_lh number;
     begin
+      l_lines := null;
       wti( replace( p_txt, chr(9), c_tab_spaces )
          , l_clp( p_idx ) + 0.5 * l_lw, l_y
          , l_clp( p_idx ) + 0.5 * l_lw, l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
@@ -11862,12 +12082,12 @@ end if;
       procedure hc( p_txt varchar2 character set any_cs, p_idx pls_integer )
       is
       begin
-        l_lines := null;
         if p_how = 2
         then
           row_height_page_break( p_txt, p_idx );
         else
           font2page_i( l_fi( p_idx ), l_fs( p_idx ) );
+          l_lines := null;
           wti( replace( p_txt, chr(9), c_tab_spaces )
              , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_y
              , l_x + l_clp( p_idx ) + 0.5 * l_lw, l_x + l_widths( p_idx ) - l_crp( p_idx ) - 0.5 * l_lw
