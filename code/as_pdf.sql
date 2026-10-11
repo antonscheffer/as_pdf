@@ -1,8 +1,8 @@
 create or replace package as_pdf
 is
   --
-  use_utl_file    constant boolean := true;
-  use_utl_http    constant boolean := true;
+  use_utl_file    constant boolean := false;
+  use_utl_http    constant boolean := false;
   use_dbms_crypto constant boolean := false;
   use_apex        constant boolean := false;
   --
@@ -48,6 +48,12 @@ is
   c_get_font_win_descent  constant pls_integer := 34;
   c_get_font_strikeout    constant pls_integer := 35;
   c_get_font_underline    constant pls_integer := 36;
+  c_get_font_dlng         constant pls_integer := 37;
+  c_get_font_slng         constant pls_integer := 38;
+  c_get_image_type        constant pls_integer := 39;
+  c_get_image_width       constant pls_integer := 40;
+  c_get_image_height      constant pls_integer := 41;
+
   --
   type tp_numbers   is table of number;
   type tp_varchar2s is table of varchar2(32767);
@@ -91,6 +97,23 @@ is
     ( p_txt        varchar2 character set any_cs
     , p_font_index pls_integer := null
     , p_fontsize   number      := null
+    )
+  return number;
+  --
+  function str_lines
+    ( p_txt        varchar2 character set any_cs
+    , p_width      number
+    , p_font_index pls_integer := null
+    , p_fontsize   number      := null
+    )
+  return pls_integer;
+  --
+  function str_height
+    ( p_txt              varchar2 character set any_cs
+    , p_width            number
+    , p_font_index       pls_integer := null
+    , p_fontsize         number      := null
+    , p_line_spacing_fct number      := null
     )
   return number;
   --
@@ -606,7 +629,7 @@ create or replace package body as_pdf
 is
 -- https://github.com/pdfcpu/pdfcpu
 -- https://github.com/n8willis/opentype-shaping-documents
-  c_version            constant varchar2(10) := '0.4.0.4';
+  c_version            constant varchar2(10) := '0.4.0.5';
   c_db_charset         constant varchar2(100) := nls_charset_name( nls_charset_id( 'C' ) );
   c_db_ncharset        constant varchar2(100) := nls_charset_name( nls_charset_id( 'N' ) );
   c_producer           constant varchar2(100) := 'AS-PDF ' || c_version || ' by Anton Scheffer';
@@ -845,6 +868,8 @@ is
     , indexToLocFormat pls_integer
     , cff              boolean
     , delete_in_gsub_type6 boolean
+    , dlng             varchar2(1024)
+    , slng             varchar2(1024)
     );
   type tp_fonts is table of tp_font index by pls_integer;
   type tp_embedded_file is record
@@ -2466,14 +2491,14 @@ $END
       put_stream( p_img.smask, l_smask, p_tag => false );
       txt2pdfdoc( 'endobj' );
     end if;
---
+    --
     l_self := add_object;
     txt2pdfdoc( '<</Type/XObject/Subtype/Image'
               ||  '/Width ' || to_char( p_img.width )
               || '/Height ' || to_char( p_img.height )
               || '/BitsPerComponent ' || to_char( p_img.color_res )
               );
---
+    --
     if p_img.transparancy is not null
     then
       txt2pdfdoc( '/Mask [' || p_img.transparancy || ' ' || p_img.transparancy || ']' );
@@ -5004,6 +5029,7 @@ $END
                   , l_page_proc.nums( 6 )
                   , l_page_proc.nums( 7 ) = 1
                   , l_page_proc.nums( 8 )
+                  , l_page_proc.chars( 3 )
                   );
             when 3
             then
@@ -5262,7 +5288,7 @@ $END
   is
     l_dash varchar2(1024);
   begin
-    txt2page( 'q ' || to_char_round( coalesce( case when p_line_width != 0 then p_line_width end, c_default_line_width ), 5 ) || ' w' );
+    txt2page( 'q ' || to_char_round( coalesce( p_line_width, c_default_line_width ), 5 ) || ' w' );
     if substr( lower( p_dash ), 1, 3 ) = 'dot'
     then
       l_dash := '[1 2] 0';
@@ -5290,6 +5316,16 @@ $END
     elsif g_pdf.color is null
     then
       txt2page( ' 1 g' );
+    end if;
+    if p_line_width = 0
+    then
+      if p_fill_color is not null
+      then
+        txt2page( rgb( p_color => p_fill_color ) || 'RG' );
+      elsif g_pdf.color is null
+      then
+        txt2page( ' 1 G' );
+      end if;
     end if;
   end graphics_init_and_fill;
   --
@@ -5751,15 +5787,15 @@ $END
       l_annot.url := p_url;
       l_annot.color := p_color;
       l_annot.extra := case p_subtype
-                         when 'Underline' then ( abs( l_font.descent ) + coalesce( l_font.underline_pos, -100 ) ) * l_fontsize / 1000
-                         when 'StrikeOut' then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) * l_fontsize / 1000
+                         when 'Underline' then ( abs( l_font.descent ) + coalesce( l_font.underline_pos, -100 ) ) * l_font.unit_norm * l_fontsize / 1000
+                         when 'StrikeOut' then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) * l_font.unit_norm * l_fontsize / 1000
                          else 0
                        end;
       l_annot.width := 0;
       l_annot.lt_x := p_x;
-      l_annot.lt_y := p_y + l_font.ascent * l_fontsize / 1000;
+      l_annot.lt_y := p_y + l_font.ascent * l_font.unit_norm * l_fontsize / 1000;
       l_annot.rb_x := p_x + str_len( p_txt, l_font_index, l_fontsize );
-      l_annot.rb_y := p_y + l_font.descent * l_fontsize / 1000;
+      l_annot.rb_y := p_y + l_font.descent * l_font.unit_norm * l_fontsize / 1000;
       g_pdf.pages( g_pdf.current_page ).annots( g_pdf.pages( g_pdf.current_page ).annots.count + 1 ) := l_annot;
     else
       add_page_proc( 12, p_page_proc
@@ -5884,8 +5920,10 @@ $END
         when c_get_current_page      then g_pdf.current_page
         when c_get_font_win_ascent   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_ascent
         when c_get_font_win_descent  then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).win_descent
-        when c_get_font_strikeout    then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) / 1000
-        when c_get_font_underline    then ( abs( l_font.descent ) + coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) / 1000
+        when c_get_font_strikeout    then ( coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) * l_font.unit_norm / 1000
+        when c_get_font_underline    then ( coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) ) * l_font.unit_norm / 1000
+        when c_get_image_width       then case when g_pdf.images.exists( p_idx ) then g_pdf.images( p_idx ).width end
+        when c_get_image_height      then case when g_pdf.images.exists( p_idx ) then g_pdf.images( p_idx ).height end
       end;
   end get;
   --
@@ -5901,6 +5939,9 @@ $END
         when c_get_font_name   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).fontname
         when c_get_font_style  then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).style
         when c_get_font_family then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).family
+        when c_get_font_dlng   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).dlng
+        when c_get_font_slng   then g_pdf.fonts( coalesce( p_idx, g_pdf.current_font ) ).slng
+        when c_get_image_type  then case when g_pdf.images.exists( p_idx ) then g_pdf.images( p_idx ).type end
       end;
   end get_string;
   --
@@ -9539,6 +9580,32 @@ else null;
       end if;
     end if;
     --
+    if l_tables.exists( 'meta' )
+    then
+      l_buf := dbms_lob.substr( p_font, 64, l_tables( 'meta' ).offset );
+      for i in 1 .. least( to_number( substr( l_buf, 25, 8 ), 'XXXXXXXX' ), 4 )
+      loop
+        case substr( l_buf, 9 + i * 24, 8 )
+          when '646C6E67' then -- dlng
+            l_font.dlng := utl_raw.cast_to_varchar2(
+                dbms_lob.substr( p_font
+                               , to_number( substr( l_buf, 25 + i * 24, 8 ), 'XXXXXXXX' )
+                               , l_tables( 'meta' ).offset + to_number( substr( l_buf, 17 + i * 24, 8 ), 'XXXXXXXX' )
+                               ) );
+          when '736C6E67' then -- slng
+            l_font.slng := utl_raw.cast_to_varchar2(
+                dbms_lob.substr( p_font
+                               , to_number( substr( l_buf, 25 + i * 24, 8 ), 'XXXXXXXX' )
+                               , l_tables( 'meta' ).offset + to_number( substr( l_buf, 17 + i * 24, 8 ), 'XXXXXXXX' )
+                               ) );
+          else null;
+        end case;
+      end loop;
+    else
+null;
+-- derive using cmap and bidi???
+    end if;
+    --
     -- https://fontdrop.info/
     -- https://twardoch.github.io/test-fonts/otetest/
     -- https://itextpdf.com/sites/default/files/attachments/PP_Advanced_typography_in_PDF.pdf
@@ -10824,15 +10891,31 @@ end if;
     , p_y                number
     , p_txt              raw
     , p_degrees_rotation number
-    , p_font_index       pls_integer
-    , p_fontsize         number
     , p_color            varchar2
+    , p_width            number
+    , p_underline        number
+    , p_strikeout        number
+    , p_line_width       number
     )
   is
     l_sin number;
     l_cos number;
     l_rad number;
     l_tmp varchar2(1000);
+    --
+    procedure underline_strikeout( p_offs number )
+    is
+    begin
+      if p_offs is not null
+      then
+        txt2page( case when p_color is not null then rgb( p_color => p_color ) || 'RG ' else coalesce( upper( g_pdf.color ), '0 G' ) || ' ' end ||
+                  to_char_round( p_line_width, 4 ) || ' w ' ||
+                  to_char_round( p_x - 0.2 ) || ' ' || to_char_round( p_y + p_offs ) || ' m ' ||
+                  to_char_round( p_x + p_width + 0.2 ) || '  ' || to_char_round( p_y + p_offs ) || ' l S ' ||
+                  coalesce( g_pdf.bk_color, ' 0 G' ) || ' '
+                );
+      end if;
+    end underline_strikeout;
   begin
     if p_color is not null
     then
@@ -10859,14 +10942,15 @@ end if;
                             )
               );
     --
+    if p_width is not null
+    then
+      underline_strikeout( p_underline );
+      underline_strikeout( p_strikeout );
+    end if;
+    --
     if p_color is not null
     then
-      if g_pdf.color is null
-      then
-        txt2page( '0 g' );
-      else
-        txt2page( g_pdf.color );
-      end if;
+      txt2page( coalesce( g_pdf.color, ' 0 g' ) );
     end if;
   end put_raw;
   --
@@ -10885,6 +10969,9 @@ end if;
     , p_apply_gpos  boolean
     , p_rtl         boolean
     , p_tw          number := null
+    , p_width       number := null
+    , p_underline   number := null
+    , p_strikeout   number := null
     )
   is
   begin
@@ -10896,9 +10983,11 @@ end if;
     put_raw( p_x, p_y
            , txt2raw( p_txt, p_font_index, p_fontsize, p_x, p_y, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl, p_tw )
            , p_degrees_rot
-           , p_font_index
-           , p_fontsize
            , p_color
+           , p_width
+           , p_underline
+           , p_strikeout
+           , p_fontsize / 18
            );
   end put_txt_i;
   --
@@ -10969,8 +11058,12 @@ end if;
     l_chg        boolean;
     l_alpha      number;
     l_fontsize   number;
+    l_width      number;
+    l_underline  number;
+    l_strikeout  number;
     l_font_index pls_integer;
     l_page       tp_page;
+    l_font       tp_font;
   begin
     if p_txt is not null
     then
@@ -11004,12 +11097,26 @@ end if;
           txt2page(  'q ' );
           add_alpha( l_alpha );
         end if;
+        if jvs2bn( p_options, 'underline' ) or jvs2bn( p_options, 'strikeout' )
+        then
+          l_font := g_pdf.fonts( l_font_index );
+          l_width := str_len( p_txt, l_font_index, l_fontsize );
+          if jvs2bn( p_options, 'underline' )
+          then
+            l_underline := coalesce( l_font.underline_pos, -100 ) * l_font.unit_norm * l_fontsize / 1000;
+          end if;
+          if jvs2bn( p_options, 'strikeout' )
+          then
+            l_strikeout := coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) * l_font.unit_norm * l_fontsize / 1000;
+          end if;
+        end if;
         put_txt_i( p_x, p_y, p_txt, p_degrees_rotation, l_font_index, l_fontsize, p_color
                  , xjv( p_options, 'script' ), xjv( p_options, 'langSys' )
                  , get_features( p_options )
                  , jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' )
                  , jvs2bn( p_options, 'RTL' )
                  , jvs2n( p_options, 'tw' )
+                 , l_width, l_underline, l_strikeout
                  );
         if l_alpha between 0 and 1
         then
@@ -11072,6 +11179,9 @@ end if;
     , p_apply_gsub  boolean     := false
     , p_apply_gpos  boolean     := false
     , p_rtl         boolean     := false
+    , p_jr          boolean     := false
+    , p_underline   number      := null
+    , p_strikeout   number      := null
     )
   is
     l_len    number;
@@ -11086,7 +11196,7 @@ end if;
     is
     begin
       wti( p_txt, p_x, p_y, p_xmin, p_xmax, p_ymin, p_ymax, p_font_index, p_fontsize, p_line_spacing, p_color, p_align, p_dry_run, p_new_x, p_new_y, p_lines, p_page_break
-         , p_options, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+         , p_options, p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl, p_jr, p_underline, p_strikeout
          );
     end;
     --
@@ -11161,20 +11271,24 @@ end if;
           when 'r' then
             put_txt_i( p_xmax - l_len, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     , null, l_len, p_underline, p_strikeout
                      );
           when 'c' then
             put_txt_i( ( p_x + p_xmax - l_len ) / 2, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     , null, l_len, p_underline, p_strikeout
                      );
           when 'j' then
             l_spaces := length( p_txt ) - length( translate( p_txt, '# ', '#' ) );
             put_txt_i( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
                      , case when l_spaces > 0 then ( 1000 / p_fontsize ) * ( p_x + l_len - p_xmax ) / l_spaces end
+                     , l_len, p_underline, p_strikeout
                      );
           else
             put_txt_i( p_x, p_y, p_txt, null, p_font_index, p_fontsize, p_color
                      , p_script, p_lang_sys, p_features, p_apply_gsub, p_apply_gpos, p_rtl
+                     , null, l_len, p_underline, p_strikeout
                      );
         end case;
       end if;
@@ -11193,17 +11307,54 @@ end if;
           return;
         end if;
       end loop;
-      if p_x > p_xmin
+      if p_jr
       then
-        line_break( p_txt );
+        declare
+          l_stop    boolean;
+          l_step    pls_integer;
+          l_txt_len pls_integer;
+        begin
+          l_txt_len := length( p_txt );
+          if l_txt_len <= 1
+          then
+            raise e_no_fit;
+          end if;
+          l_step := ceil( l_txt_len / 2 );
+          l_pos := l_step;
+          for i in 1 .. 100
+          loop
+            l_len := str_len( substr( p_txt, 1, l_pos ), p_font_index, p_fontsize );
+            exit when p_x + l_len = p_xmax;
+            l_step := ceil( l_step / 2 );
+            if p_x + l_len < p_xmax
+            then
+              exit when l_stop;
+              l_pos := l_pos + l_step;
+              l_stop := l_step = 1;
+            else
+              l_pos := l_pos - l_step;
+            end if;
+          end loop;
+          if p_x + str_len( substr( p_txt, 1, l_pos ), p_font_index, p_fontsize ) > p_xmax
+          then
+            raise e_no_fit;
+          end if;
+          wt( substr( p_txt, 1, l_pos ), p_x, p_y );
+          line_break( substr( p_txt, l_pos + 1 ) );
+        end;
       else
-        if length( p_txt ) <= 1
+        if p_x > p_xmin
         then
-          raise e_no_fit;
+          line_break( p_txt );
+        else
+          if length( p_txt ) <= 1
+          then
+            raise e_no_fit;
+          end if;
+          l_pos := ceil( length( p_txt ) / 2 );
+          wt( substr( p_txt, 1, l_pos ), p_x, p_y );
+          line_break( substr( p_txt, l_pos + 1 ) );
         end if;
-        l_pos := ceil( length( p_txt ) / 2 );
-        wt( substr( p_txt, 1, l_pos ), p_x, p_y );
-        line_break( substr( p_txt, l_pos + 1 ) );
       end if;
     end if;
   end wti;
@@ -11244,7 +11395,8 @@ end if;
          , l_settings.margin_bottom, l_settings.page_height - l_settings.margin_top - l_fontsize
          , l_font_index, l_fontsize, g_pdf.line_spacing_factor * l_fontsize, p_color, null
          , false, g_pdf.x, g_pdf.y, l_lines, l_page_break
-         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' )
+         , jvs2bn( p_options, 'RTL' ), jvs2bn( p_options, 'JR' )
          );
     end if;
   exception
@@ -11343,10 +11495,11 @@ end if;
   end str_lines;
   --
   function str_height
-    ( p_txt        varchar2 character set any_cs
-    , p_width      number
-    , p_font_index pls_integer := null
-    , p_fontsize   number      := null
+    ( p_txt              varchar2 character set any_cs
+    , p_width            number
+    , p_font_index       pls_integer := null
+    , p_fontsize         number      := null
+    , p_line_spacing_fct number      := null
     )
   return number
   is
@@ -11359,7 +11512,8 @@ end if;
     l_fontsize := coalesce( p_fontsize, g_pdf.fonts( l_font_index ).fontsize );
     l_lines := str_lines( p_txt, p_width, l_font_index, l_fontsize );
     l_font := g_pdf.fonts( l_font_index );
-    return get_font_top( l_font, l_fontsize ) + get_font_bottom( l_font, l_fontsize ) + l_fontsize * g_pdf.line_spacing_factor * ( coalesce( l_lines, 1 ) - 1 );
+    return get_font_top( l_font, l_fontsize ) + get_font_bottom( l_font, l_fontsize )
+         + l_fontsize * coalesce( p_line_spacing_fct, g_pdf.line_spacing_factor ) * ( coalesce( l_lines, 1 ) - 1 );
   end str_height;
   --
   procedure handle_widths
@@ -11511,6 +11665,9 @@ end if;
     l_fontsize   number;
     l_line_sp    number;
     l_txt_height number;
+    l_underline  number;
+    l_strikeout  number;
+    l_jr         boolean;
     l_lines      pls_integer;
     l_font_index pls_integer;
     l_text_color varchar2(32767);
@@ -11537,7 +11694,9 @@ end if;
          , l_text_color
          , case when not p_dry_run then coalesce( p_align, xjv( p_options, 'align' ), xjv( p_options, 'alignment' ) ) end
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
-         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' )
+         , jvs2bn( p_options, 'RTL' ), l_jr
+         , l_underline, l_strikeout
          );
       exception
         when e_no_fit then
@@ -11558,7 +11717,7 @@ end if;
                       );
       l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
       l_font := g_pdf.fonts( l_font_index );
-      l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+      l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize, c_default_fontsize );
       l_fill_color := coalesce( p_fill_color, xjv( p_options, 'fillColor' ) );
       l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
       l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
@@ -11572,6 +11731,7 @@ end if;
       l_line_sp := coalesce( jvs2n( p_options, 'lineSpacing' )
                            , l_fontsize * coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor )
                            );
+      l_jr := jvs2bn( p_options, 'JR' );
       --
       l_x := coalesce( p_x, l_settings.margin_left );
       l_y := p_y - 0.5 * l_lw - l_tp - l_mt;
@@ -11579,6 +11739,18 @@ end if;
                          , least( str_len( p_txt, l_font_index, l_fontsize ) + l_lp + l_rp, l_settings.page_width - l_settings.margin_right - l_x )
                          );
       l_widths( 1 ) := l_width;
+      --
+      if jvs2bn( p_options, 'underline' ) or jvs2bn( p_options, 'strikeout' )
+      then
+        if jvs2bn( p_options, 'underline' )
+        then
+          l_underline := coalesce( l_font.underline_pos, -100 ) * l_font.unit_norm * l_fontsize / 1000;
+        end if;
+        if jvs2bn( p_options, 'strikeout' )
+        then
+          l_strikeout := coalesce( l_font.strikeout_pos, 0.5 * l_font.ascent ) * l_font.unit_norm * l_fontsize / 1000;
+        end if;
+      end if;
       --
       wt( true );
       l_txt_height := l_mb + l_mt + l_line_sp * ( coalesce( l_lines, 1 ) - 1 );
@@ -11670,11 +11842,12 @@ end if;
     l_fnt_top    number;
     l_fnt_bottom number;
     l_y_offset   number;
+    l_jr         boolean;
+    l_pb         boolean;
     l_cnt        pls_integer;
     l_lines      pls_integer;
     l_col_fi     pls_integer;
     l_font_index pls_integer;
-    l_pb         boolean;
     l_col_path   varchar2(100);
     l_align      varchar2(32767);
     l_valign     varchar2(32767);
@@ -11717,7 +11890,8 @@ end if;
          , case when not p_dry_run then coalesce( xjv( p_options, 'columns[' || ( p_idx - 1 ) || '].textColor' ), l_text_color ) end
          , case when not p_dry_run then l_caln( p_idx ) end
          , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_pb
-         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' ), jvs2bn( p_options, 'RTL' )
+         , p_options, xjv( p_options, 'script' ), xjv( p_options, 'langSys' ), get_features( p_options ), jvs2bn( p_options, 'applyGSUB' ), jvs2bn( p_options, 'applyGPOS' )
+         , jvs2bn( p_options, 'RTL' ), l_jr
          );
       exception
         when e_no_fit then
@@ -11737,7 +11911,7 @@ end if;
                     );
     l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
     l_font := g_pdf.fonts( l_font_index );
-    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize, c_default_fontsize );
     l_fill_color := xjv( p_options, 'fillColor' );
     l_text_color := coalesce( p_txt_color, xjv( p_options, 'textColor' ) );
     l_line_color := coalesce( p_line_color, xjv( p_options, 'lineColor' ) );
@@ -11751,6 +11925,7 @@ end if;
     l_mh := coalesce( p_min_height, jvs2n( p_options, 'height' ), jvs2n( p_options, 'minimalHeight' ), 0 );
     l_line_sp := jvs2n( p_options, 'lineSpacing' );
     l_line_spf := coalesce( jvs2n( p_options, 'lineSpacingFactor' ), g_pdf.line_spacing_factor );
+    l_jr := jvs2bn( p_options, 'JR' );
     --
     l_x := coalesce( p_x, l_settings.margin_left );
     handle_widths( p_widths, l_cnt, l_x, l_settings, p_options, l_widths );
@@ -11913,6 +12088,7 @@ end if;
     l_apply_gsub    boolean;
     l_apply_gpos    boolean;
     l_rtl           boolean;
+    l_jr            boolean;
     l_features      tp_features;
     l_font          tp_font;
     l_col_font      tp_font;
@@ -11995,7 +12171,7 @@ end if;
            , l_header_cols( p_idx ).font_index, l_header_cols( p_idx ).font_size, l_header_cols( p_idx ).line_spacing
            , l_header_cols( p_idx ).text_color, l_hdr_align
            , p_dry_run, l_tmp_x, l_tmp_y, l_lines, l_page_break
-           , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
+           , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl, l_jr
            );
       exception
         when e_no_fit then
@@ -12095,7 +12271,7 @@ end if;
              , l_fi( p_idx ), l_fs( p_idx ), l_cls( p_idx ), l_text_color
              , l_ca( p_idx )
              , false, l_tmp_x, l_tmp_y, l_lines, l_page_break
-             , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl
+             , l_options, l_script, l_lang_sys, l_features, l_apply_gsub, l_apply_gpos, l_rtl, l_jr
              );
           l_x := l_x + l_widths( p_idx );
         end if;
@@ -12267,6 +12443,7 @@ end if;
     l_lang_sys   := xjv( p_options, 'langSys' );
     l_features   := get_features( p_options );
     l_rtl        := jvs2bn( p_options, 'RTL' );
+    l_jr         := jvs2bn( p_options, 'JR' );
     l_apply_gsub := jvs2bn( p_options, 'applyGSUB' );
     l_apply_gpos := jvs2bn( p_options, 'applyGPOS' );
     l_options := null;
@@ -12363,7 +12540,7 @@ end if;
                     );
     l_font_index := gfi( coalesce( p_font_index, jvs2n( p_options, 'fontIndex' ) ) );
     l_font := g_pdf.fonts( l_font_index );
-    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize );
+    l_fontsize := coalesce( p_fontsize, jvs2n( p_options, 'fontSize' ), l_font.fontsize, c_default_fontsize );
     l_header := coalesce( upper( xjv( p_options, 'header' ) ) = 'TRUE', l_header, false );
     l_header_repeat := coalesce( upper( xjv( p_options, 'headerRepeat' ) ) = 'TRUE', true );
     l_fill_color := coalesce( xjv( p_options, 'fillColor' ), l_fill_color );
